@@ -15,3 +15,15 @@ site/
 
 # Python virtual environment
 .venv/
+
+# Claude Code
+.claude/
+
+# Xcode user data
+xcuserdata/
+
+# Internal docs
+docs/guides/competitive-analysis-pr729.md
+
+# Misc
+samples/client/lit/component_gallery/package-lock.json
