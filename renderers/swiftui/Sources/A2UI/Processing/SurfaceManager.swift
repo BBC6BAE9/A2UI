@@ -70,7 +70,5 @@ public final class SurfaceManager {
         message.beginRendering?.surfaceId
             ?? message.surfaceUpdate?.surfaceId
             ?? message.dataModelUpdate?.surfaceId
-            ?? message.createSurface?.surfaceId
-            ?? message.updateComponents?.surfaceId
     }
 }

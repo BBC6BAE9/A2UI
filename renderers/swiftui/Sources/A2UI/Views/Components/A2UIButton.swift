@@ -14,6 +14,11 @@
 
 import SwiftUI
 
+/// # Button
+/// Uses native SwiftUI `Button` with `.borderedProminent` / `.bordered` for system HIG rendering.
+/// When `A2UIStyle.buttonStyles` provides a `ButtonVariantStyle` override, switches to custom
+/// drawing (plain style + manual background/padding/radius) so the host app can fully restyle.
+/// The child is an arbitrary component tree (typically Text), not a plain string label.
 struct A2UIButton: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -38,7 +43,7 @@ struct A2UIButton: View {
 // MARK: - ButtonActionView
 
 /// Wrapper that reads `a2uiActionHandler` from environment and invokes it on tap.
-/// By default all variants use native SwiftUI ButtonStyle for HIG-compliant rendering.
+/// v0.8 Button supports `primary: Bool` to toggle between `.borderedProminent` and `.bordered`.
 /// When a `ButtonVariantStyle` override is set, the button switches to custom drawing.
 struct ButtonActionView<Label: View>: View {
     let props: ButtonProperties
@@ -50,43 +55,24 @@ struct ButtonActionView<Label: View>: View {
     @Environment(\.a2uiActionHandler) private var actionHandler
     @Environment(\.a2uiStyle) private var style
 
-    private var variant: String { props.variant ?? "" }
-
-    private var isFunctionCallAction: Bool {
-        props.action.isFunctionCall
-    }
-
-    private var checksDisabled: Bool {
-        guard let checks = props.checks, !checks.isEmpty else { return false }
-        return !ChecksEvaluator.allPass(
-            checks: checks,
-            viewModel: viewModel,
-            dataContextPath: dataContextPath
-        )
-    }
+    private var isPrimary: Bool { props.primary == true }
 
     private func handleAction() {
-        if isFunctionCallAction, let fn = props.action.functionCallPayload {
-            _ = CatalogFunctionEvaluator.evaluate(
-                fn, viewModel: viewModel, dataContextPath: dataContextPath
-            )
-        } else {
-            let resolved = viewModel.resolveAction(
-                props.action,
-                sourceComponentId: componentId,
-                dataContextPath: dataContextPath
-            )
-            viewModel.lastAction = resolved
-            if let handler = actionHandler {
-                handler(resolved)
-            }
+        let resolved = viewModel.resolveAction(
+            props.action,
+            sourceComponentId: componentId,
+            dataContextPath: dataContextPath
+        )
+        viewModel.lastAction = resolved
+        if let handler = actionHandler {
+            handler(resolved)
         }
     }
 
     var body: some View {
-        let disabled = checksDisabled
+        let variant = isPrimary ? "primary" : "default"
 
-        if let custom = style.buttonStyles[variant.isEmpty ? "default" : variant] {
+        if let custom = style.buttonStyles[variant] {
             // Custom drawing path — ButtonVariantStyle override is set
             SwiftUI.Button(action: handleAction) { label() }
                 .buttonStyle(.plain)
@@ -97,39 +83,21 @@ struct ButtonActionView<Label: View>: View {
                     RoundedRectangle(cornerRadius: custom.cornerRadius ?? 8)
                         .fill(custom.backgroundColor ?? .clear)
                 )
-                .opacity(disabled ? 0.5 : 1.0)
-                .disabled(disabled)
         } else {
             // System ButtonStyle path — native HIG rendering
-            switch variant {
-            case "primary":
+            if isPrimary {
                 SwiftUI.Button(action: handleAction) { label() }
                     .buttonStyle(.borderedProminent)
                     .tint(style.primaryColor)
-                    .disabled(disabled)
-            case "borderless":
-                SwiftUI.Button(action: handleAction) { label() }
-                    .buttonStyle(.borderless)
-                    .disabled(disabled)
-            default:
+            } else {
                 SwiftUI.Button(action: handleAction) { label() }
                     .buttonStyle(.bordered)
-                    .disabled(disabled)
             }
         }
     }
 }
 
 // MARK: - Previews
-
-#Preview("Button - Primary") {
-    if let (vm, root) = previewViewModel(jsonl: """
-    {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Button":{"child":"bt","variant":"primary","action":{"name":"tap"}}}},{"id":"bt","component":{"Text":{"text":{"literalString":"Primary"}}}}]}}
-    """) {
-        A2UIComponentView(node: root, viewModel: vm).padding()
-    }
-}
 
 #Preview("Button - Default") {
     if let (vm, root) = previewViewModel(jsonl: """
@@ -140,19 +108,19 @@ struct ButtonActionView<Label: View>: View {
     }
 }
 
-#Preview("Button - Borderless") {
+#Preview("Button - Primary") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Button":{"child":"bt","variant":"borderless","action":{"name":"tap"}}}},{"id":"bt","component":{"Text":{"text":{"literalString":"Borderless"}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Button":{"child":"bt","primary":true,"action":{"name":"tap"}}}},{"id":"bt","component":{"Text":{"text":{"literalString":"Primary"}}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }
 }
 
-#Preview("Button - Disabled by Checks") {
+#Preview("Button - With Action Context") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Button":{"child":"bt","variant":"primary","action":{"name":"submit"},"checks":[{"condition":{"call":"required","args":{"value":{"path":"/name"}}},"message":"Name is required"}]}}},{"id":"bt","component":{"Text":{"text":{"literalString":"Submit"}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Button":{"child":"bt","primary":true,"action":{"name":"submit","context":[{"key":"userId","value":{"literalString":"123"}}]}}}},{"id":"bt","component":{"Text":{"text":{"literalString":"Submit"}}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }
@@ -161,7 +129,7 @@ struct ButtonActionView<Label: View>: View {
 #Preview("Button - All Variants") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Column":{"children":{"explicitList":["b1","b2","b3"]}}}},{"id":"b1","component":{"Button":{"child":"t1","variant":"primary","action":{"name":"tap"}}}},{"id":"t1","component":{"Text":{"text":{"literalString":"Primary"}}}},{"id":"b2","component":{"Button":{"child":"t2","action":{"name":"tap"}}}},{"id":"t2","component":{"Text":{"text":{"literalString":"Default (Bordered)"}}}},{"id":"b3","component":{"Button":{"child":"t3","variant":"borderless","action":{"name":"tap"}}}},{"id":"t3","component":{"Text":{"text":{"literalString":"Borderless"}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Column":{"children":{"explicitList":["b1","b2"]}}}},{"id":"b1","component":{"Button":{"child":"t1","primary":true,"action":{"name":"tap"}}}},{"id":"t1","component":{"Text":{"text":{"literalString":"Primary"}}}},{"id":"b2","component":{"Button":{"child":"t2","action":{"name":"tap"}}}},{"id":"t2","component":{"Text":{"text":{"literalString":"Default"}}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }

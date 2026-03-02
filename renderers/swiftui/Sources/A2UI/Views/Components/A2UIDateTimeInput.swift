@@ -14,6 +14,27 @@
 
 import SwiftUI
 
+/// Spec v0.8 DateTimeInput — date and/or time picker.
+///
+/// Spec properties:
+/// - `value` (required): ISO 8601 string (literalString or path) — bound to data model
+/// - `enableDate` (optional): show date selector (defaults to true)
+/// - `enableTime` (optional): show time selector (defaults to true)
+///
+/// Note: `label` is not in Spec v0.8 (`additionalProperties: false`), but the
+/// renderer uses it when present for UI context. When absent, a default label
+/// is derived from enableDate/enableTime ("Date", "Time", or "Date & Time").
+///
+/// ## Rendering strategy: system `DatePicker`, zero hardcoded values.
+///
+/// Maps directly to `DatePicker(selection:displayedComponents:)` with
+/// `.date` and/or `.hourAndMinute` based on `enableDate`/`enableTime`.
+///
+/// ## Platform behavior:
+/// - iOS / macOS / visionOS / watchOS: system `DatePicker`
+/// - tvOS: `DatePicker` is unavailable — falls back to read-only text display
+///   showing the current ISO 8601 value. tvOS apps rarely need date input;
+///   if needed, a custom picker could be added via style override.
 struct A2UIDateTimeInput: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -24,7 +45,6 @@ struct A2UIDateTimeInput: View {
 
     var body: some View {
         if let props = try? node.payload.typedProperties(DateTimeInputProperties.self) {
-            let _ = viewModel.resolveString(props.value, dataContextPath: dataContextPath)
             let enableDate = props.enableDate ?? true
             let enableTime = props.enableTime ?? true
 
@@ -39,21 +59,14 @@ struct A2UIDateTimeInput: View {
             }()
 
             let dtStyle = style.dateTimeInputStyle
-            let msgs = a2uiChecksMessages(for: props.checks, viewModel: viewModel, dataContextPath: dataContextPath)
 
             #if os(tvOS)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading) {
                 Text(labelText)
                     .font(dtStyle.labelFont)
                     .foregroundStyle(dtStyle.labelColor ?? .primary)
                 Text(viewModel.resolveString(props.value, dataContextPath: dataContextPath))
                     .foregroundStyle(.secondary)
-
-                ForEach(msgs, id: \.self) { msg in
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
             }
             #else
             let components: DatePicker.Components = {
@@ -64,23 +77,15 @@ struct A2UIDateTimeInput: View {
                 return c
             }()
 
-            VStack(alignment: .leading, spacing: 4) {
-                DatePicker(
-                    selection: a2uiDateBinding(for: props.value, viewModel: viewModel, dataContextPath: dataContextPath),
-                    displayedComponents: components
-                ) {
-                    Text(labelText)
-                        .font(dtStyle.labelFont)
-                        .foregroundStyle(dtStyle.labelColor ?? .primary)
-                }
-                .tint(dtStyle.tintColor)
-
-                ForEach(msgs, id: \.self) { msg in
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
+            DatePicker(
+                selection: a2uiDateBinding(for: props.value, viewModel: viewModel, dataContextPath: dataContextPath),
+                displayedComponents: components
+            ) {
+                Text(labelText)
+                    .font(dtStyle.labelFont)
+                    .foregroundStyle(dtStyle.labelColor ?? .primary)
             }
+            .tint(dtStyle.tintColor)
             #endif
         }
     }

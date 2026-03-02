@@ -16,9 +16,8 @@ import Foundation
 
 // MARK: - RawComponentInstance
 
-/// A raw component instance from a surfaceUpdate / updateComponents message.
-/// Supports both v0.8 nested (`{"component":{"TextField":{...}}}`)
-/// and v0.9 flat (`{"component":"TextField","label":"..."}`) formats.
+/// A raw component instance from a surfaceUpdate message.
+/// v0.8 nested format: `{"component":{"TextField":{...}}}`.
 public struct RawComponentInstance {
     public var id: String
     public var weight: Double?
@@ -53,16 +52,7 @@ extension RawComponentInstance: Codable {
             return
         }
 
-        if let typeName = componentVal.stringValue {
-            // v0.9 flat format: component is a type-name string,
-            // all other keys (except id/component/weight) are properties.
-            let reserved: Set<String> = ["id", "component", "weight"]
-            var props: [String: AnyCodable] = [:]
-            for (key, value) in dict where !reserved.contains(key) {
-                props[key] = value
-            }
-            self.component = RawComponentPayload(typeName: typeName, properties: props)
-        } else if case .dictionary(let compDict) = componentVal {
+        if case .dictionary(let compDict) = componentVal {
             // v0.8 nested format: {"TypeName": {prop1:..., prop2:...}}
             guard let (typeName, propsVal) = compDict.first else {
                 self.component = nil
@@ -89,8 +79,7 @@ extension RawComponentInstance: Codable {
 // MARK: - RawComponentPayload
 
 /// Wraps the dynamic component type and its properties.
-/// In v0.8 JSON: `{"Text": {"text": {...}, "variant": "h1"}}`.
-/// In v0.9 the payload is constructed from flat instance keys.
+/// v0.8 JSON: `{"Text": {"text": {...}, "usageHint": "h1"}}`.
 public struct RawComponentPayload: Codable {
     public var typeName: String
     public var properties: [String: AnyCodable]
@@ -121,7 +110,7 @@ public struct RawComponentPayload: Codable {
 // MARK: - ChildrenReference
 
 /// The set of children for a container component (Row, Column, List).
-/// Supports both v0.8 (`{"explicitList":["a","b"]}`) and v0.9 (`["a","b"]`) formats.
+/// v0.8 format: `{"explicitList":["a","b"]}` or `{"template":{...}}`.
 public struct ChildrenReference {
     public var explicitList: [String]?
     public var template: TemplateReference?
@@ -135,13 +124,8 @@ extension ChildrenReference: Codable {
     public init(from decoder: Decoder) throws {
         let raw = try AnyCodable(from: decoder)
         switch raw {
-        case .array(let arr):
-            // v0.9: plain array of child IDs
-            self.explicitList = arr.compactMap(\.stringValue)
-            self.template = nil
         case .dictionary(let dict):
             // v0.8: {"explicitList":[...]} or {"template":{...}}
-            // v0.10: {"componentId":"...", "path":"..."} (template as direct object)
             if case .array(let items) = dict["explicitList"] {
                 self.explicitList = items.compactMap(\.stringValue)
             } else {
@@ -149,11 +133,7 @@ extension ChildrenReference: Codable {
             }
             if let tDict = dict["template"]?.dictionaryValue,
                let cid = tDict["componentId"]?.stringValue,
-               let db = tDict["dataBinding"]?.stringValue ?? tDict["path"]?.stringValue {
-                self.template = TemplateReference(componentId: cid, dataBinding: db)
-            } else if let cid = dict["componentId"]?.stringValue,
-                      let db = dict["path"]?.stringValue ?? dict["dataBinding"]?.stringValue {
-                // v0.10 flat template format: {"componentId":"...", "path":"..."}
+               let db = tDict["dataBinding"]?.stringValue {
                 self.template = TemplateReference(componentId: cid, dataBinding: db)
             } else {
                 self.template = nil
@@ -182,22 +162,15 @@ public struct TemplateReference: Codable {
 // MARK: - Action
 
 /// An action triggered by user interaction (e.g., button click).
-/// Supports both v0.8 (`{"name":"tap","context":[...]}`)
-/// and v0.9 (`{"event":{"name":"submit","context":{...}}}`) formats,
-/// as well as v0.10 client-side function calls
-/// (`{"functionCall":{"call":"openUrl","args":{"url":"..."}}}`).
+/// v0.8 format: `{"name":"tap","context":[{"key":"k","value":{...}}]}`.
 public struct Action {
     public var name: String
     public var context: [ActionContextEntry]?
-    /// If this action is a client-side function call, stores the raw call payload.
-    public var functionCallPayload: AnyCodable?
-    /// Whether this action is a client-side function call (not a server event).
-    public var isFunctionCall: Bool { functionCallPayload != nil }
 }
 
 extension Action: Codable {
     private enum CodingKeys: String, CodingKey {
-        case name, context, event, functionCall
+        case name, context
     }
 
     public init(from decoder: Decoder) throws {
@@ -209,49 +182,25 @@ extension Action: Codable {
             )
         }
 
-        if let name = dict["name"]?.stringValue {
-            // v0.8: {"name":"tap","context":[{"key":"k","value":{...}}]}
-            self.name = name
-            self.functionCallPayload = nil
-            if case .array(let items) = dict["context"] {
-                self.context = items.compactMap(Self.decodeV08ContextEntry)
-            } else {
-                self.context = nil
-            }
-        } else if let eventDict = dict["event"]?.dictionaryValue,
-                  let name = eventDict["name"]?.stringValue {
-            // v0.9 event: {"event":{"name":"submit","context":{...}}}
-            self.name = name
-            self.functionCallPayload = nil
-            if let ctxDict = eventDict["context"]?.dictionaryValue {
-                self.context = ctxDict.map { key, value in
-                    ActionContextEntry(key: key, value: Self.boundValueFromAnyCodable(value))
-                }
-            } else {
-                self.context = nil
-            }
-        } else if let fnDict = dict["functionCall"]?.dictionaryValue {
-            // v0.10 functionCall: {"functionCall":{"call":"openUrl","args":{...}}}
-            let callName = fnDict["call"]?.stringValue ?? "unknown"
-            self.name = callName
-            self.functionCallPayload = .dictionary(fnDict)
-            self.context = nil
-        } else {
+        guard let name = dict["name"]?.stringValue else {
             throw DecodingError.dataCorrupted(
                 .init(codingPath: decoder.codingPath,
-                      debugDescription: "Action: expected 'name', 'event', or 'functionCall'")
+                      debugDescription: "Action: expected 'name'")
             )
+        }
+        // v0.8: {"name":"tap","context":[{"key":"k","value":{...}}]}
+        self.name = name
+        if case .array(let items) = dict["context"] {
+            self.context = items.compactMap(Self.decodeV08ContextEntry)
+        } else {
+            self.context = nil
         }
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        if let fn = functionCallPayload {
-            try container.encode(fn, forKey: .functionCall)
-        } else {
-            try container.encode(name, forKey: .name)
-            try container.encodeIfPresent(context, forKey: .context)
-        }
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(context, forKey: .context)
     }
 
     // MARK: - Helpers
@@ -274,9 +223,6 @@ extension Action: Codable {
         case .dictionary(let dict):
             if let path = dict["path"]?.stringValue {
                 return BoundValue(path: path)
-            }
-            if dict["call"] != nil {
-                return BoundValue(functionCall: .dictionary(dict))
             }
             if let s = dict["literalString"]?.stringValue {
                 return BoundValue(literalString: s)

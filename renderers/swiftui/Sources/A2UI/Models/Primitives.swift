@@ -16,22 +16,17 @@ import Foundation
 
 // MARK: - StringValue
 
-/// A value that can be either a literal string, a path to the data model,
-/// or a function call returning a string.
-/// Supports both v0.8 (`{"literalString":"..."}`) and v0.9 (`"..."`) formats,
-/// as well as v0.10 function calls (`{"call":"formatString","args":{...},"returnType":"string"}`).
+/// A value that can be either a literal string or a path to the data model.
+/// v0.8 format: `{"literalString":"..."}` or `{"path":"..."}`.
 public struct StringValue {
     public var path: String?
     public var literalString: String?
     public var literal: String?
-    /// A function call expression (e.g. `{"call":"formatString","args":{...}}`).
-    public var functionCall: AnyCodable?
 
-    public init(path: String? = nil, literalString: String? = nil, literal: String? = nil, functionCall: AnyCodable? = nil) {
+    public init(path: String? = nil, literalString: String? = nil, literal: String? = nil) {
         self.path = path
         self.literalString = literalString
         self.literal = literal
-        self.functionCall = functionCall
     }
 
     public var literalValue: String? {
@@ -41,7 +36,7 @@ public struct StringValue {
 
 extension StringValue: Codable {
     private enum CodingKeys: String, CodingKey {
-        case path, literalString, literal, call, args, returnType
+        case path, literalString, literal
     }
 
     public init(from decoder: Decoder) throws {
@@ -51,51 +46,33 @@ extension StringValue: Codable {
             self.path = nil
             self.literalString = s
             self.literal = nil
-            self.functionCall = nil
         case .dictionary(let dict):
-            if dict["call"] != nil {
-                // Function call: {"call":"formatString","args":{...},"returnType":"string"}
-                self.path = nil
-                self.literalString = nil
-                self.literal = nil
-                self.functionCall = .dictionary(dict)
-            } else {
-                self.path = dict["path"]?.stringValue
-                self.literalString = dict["literalString"]?.stringValue
-                self.literal = dict["literal"]?.stringValue
-                self.functionCall = nil
-            }
+            self.path = dict["path"]?.stringValue
+            self.literalString = dict["literalString"]?.stringValue
+            self.literal = dict["literal"]?.stringValue
         default:
             self.path = nil
             self.literalString = nil
             self.literal = nil
-            self.functionCall = nil
         }
     }
 
     public func encode(to encoder: Encoder) throws {
-        if let fn = functionCall {
-            var container = encoder.singleValueContainer()
-            try container.encode(fn)
-        } else {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encodeIfPresent(path, forKey: .path)
-            try container.encodeIfPresent(literalString, forKey: .literalString)
-            try container.encodeIfPresent(literal, forKey: .literal)
-        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(path, forKey: .path)
+        try container.encodeIfPresent(literalString, forKey: .literalString)
+        try container.encodeIfPresent(literal, forKey: .literal)
     }
 }
 
 // MARK: - NumberValue
 
-/// A value that can be either a literal number, a path to the data model,
-/// or a function call returning a number.
-/// Supports both v0.8 (`{"literalNumber":42}`) and v0.9 (`42`) formats.
+/// A value that can be either a literal number or a path to the data model.
+/// v0.8 format: `{"literalNumber":42}` or `{"path":"..."}`.
 public struct NumberValue {
     public var path: String?
     public var literalNumber: Double?
     public var literal: Double?
-    public var functionCall: AnyCodable?
 
     public var literalValue: Double? {
         literalNumber ?? literal
@@ -114,50 +91,33 @@ extension NumberValue: Codable {
             self.path = nil
             self.literalNumber = n
             self.literal = nil
-            self.functionCall = nil
         case .dictionary(let dict):
-            if dict["call"] != nil {
-                self.path = nil
-                self.literalNumber = nil
-                self.literal = nil
-                self.functionCall = .dictionary(dict)
-            } else {
-                self.path = dict["path"]?.stringValue
-                self.literalNumber = dict["literalNumber"]?.numberValue
-                self.literal = dict["literal"]?.numberValue
-                self.functionCall = nil
-            }
+            self.path = dict["path"]?.stringValue
+            self.literalNumber = dict["literalNumber"]?.numberValue
+            self.literal = dict["literal"]?.numberValue
         default:
             self.path = nil
             self.literalNumber = nil
             self.literal = nil
-            self.functionCall = nil
         }
     }
 
     public func encode(to encoder: Encoder) throws {
-        if let fn = functionCall {
-            var container = encoder.singleValueContainer()
-            try container.encode(fn)
-        } else {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encodeIfPresent(path, forKey: .path)
-            try container.encodeIfPresent(literalNumber, forKey: .literalNumber)
-            try container.encodeIfPresent(literal, forKey: .literal)
-        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(path, forKey: .path)
+        try container.encodeIfPresent(literalNumber, forKey: .literalNumber)
+        try container.encodeIfPresent(literal, forKey: .literal)
     }
 }
 
 // MARK: - BooleanValue
 
-/// A value that can be either a literal boolean, a path to the data model,
-/// or a function call returning a boolean.
-/// Supports both v0.8 (`{"literalBoolean":true}`) and v0.9 (`true`) formats.
+/// A value that can be either a literal boolean or a path to the data model.
+/// v0.8 format: `{"literalBoolean":true}` or `{"path":"..."}`.
 public struct BooleanValue {
     public var path: String?
     public var literalBoolean: Bool?
     public var literal: Bool?
-    public var functionCall: AnyCodable?
 
     public var literalValue: Bool? {
         literalBoolean ?? literal
@@ -176,50 +136,34 @@ extension BooleanValue: Codable {
             self.path = nil
             self.literalBoolean = b
             self.literal = nil
-            self.functionCall = nil
         case .dictionary(let dict):
-            if dict["call"] != nil {
-                self.path = nil
-                self.literalBoolean = nil
-                self.literal = nil
-                self.functionCall = .dictionary(dict)
-            } else {
-                self.path = dict["path"]?.stringValue
-                self.literalBoolean = dict["literalBoolean"]?.boolValue
-                self.literal = dict["literal"]?.boolValue
-                self.functionCall = nil
-            }
+            self.path = dict["path"]?.stringValue
+            self.literalBoolean = dict["literalBoolean"]?.boolValue
+            self.literal = dict["literal"]?.boolValue
         default:
             self.path = nil
             self.literalBoolean = nil
             self.literal = nil
-            self.functionCall = nil
         }
     }
 
     public func encode(to encoder: Encoder) throws {
-        if let fn = functionCall {
-            var container = encoder.singleValueContainer()
-            try container.encode(fn)
-        } else {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encodeIfPresent(path, forKey: .path)
-            try container.encodeIfPresent(literalBoolean, forKey: .literalBoolean)
-            try container.encodeIfPresent(literal, forKey: .literal)
-        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(path, forKey: .path)
+        try container.encodeIfPresent(literalBoolean, forKey: .literalBoolean)
+        try container.encodeIfPresent(literal, forKey: .literal)
     }
 }
 
 // MARK: - BoundValue
 
-/// A general bound value that can hold any literal type, a path reference,
-/// or a v0.9 function call (e.g. formatDate) in action context.
+/// A general bound value that can hold any literal type or a path reference.
+/// Used in action context entries.
 public struct BoundValue: Codable {
     public var path: String?
     public var literalString: String?
     public var literalNumber: Double?
     public var literalBoolean: Bool?
-    public var functionCall: AnyCodable?
 }
 
 // MARK: - ValueMapEntry

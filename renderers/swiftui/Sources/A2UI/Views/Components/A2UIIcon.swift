@@ -14,6 +14,12 @@
 
 import SwiftUI
 
+/// # Icon
+/// Standard icons: SF Symbol via `A2UIStyle.sfSymbolName()` mapping (SPEC uses Material naming).
+/// Fixed 24×24 frame per icon for grid alignment — matches web-core's `width:1em; height:1em`
+/// approach with Material Symbols font.
+/// Custom SVG path: delegates to `SVGIconView` which uses a custom `Layout` to size the Canvas
+/// based on the current font's line height (no hardcoded size, adapts to Dynamic Type).
 struct A2UIIcon: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -31,11 +37,8 @@ struct A2UIIcon: View {
                 )
                 let symbolName = style.sfSymbolName(for: normalizeIconName(name))
                 Image(systemName: symbolName)
-                    .font(.title2)
-                    .frame(width: 32, height: 32)
             case .customPath(let svgPath):
-                SVGPathShape(svgPath: svgPath)
-                    .frame(width: 32, height: 32)
+                SVGIconView(svgPath: svgPath)
             }
         }
     }
@@ -56,6 +59,15 @@ struct A2UIIcon: View {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
     {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Row":{"children":{"explicitList":["i1","i2","i3","i4"]}}}},{"id":"i1","component":{"Icon":{"name":{"literalString":"home"}}}},{"id":"i2","component":{"Icon":{"name":{"literalString":"search"}}}},{"id":"i3","component":{"Icon":{"name":{"literalString":"favorite"}}}},{"id":"i4","component":{"Icon":{"name":{"literalString":"settings"}}}}]}}
+    """) {
+        A2UIComponentView(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("Icon - Custom SVG Path") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Icon":{"name":{"path":"M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"}}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }

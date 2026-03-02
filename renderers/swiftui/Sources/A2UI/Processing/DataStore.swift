@@ -169,7 +169,7 @@ public final class DataStore {
         setNestedValue(path: fullPath, value: value)
     }
 
-    // MARK: - Array Data Helpers (ChoicePicker)
+    // MARK: - Array Data Helpers (MultipleChoice)
 
     /// Resolve a `StringListValue` to an array of selected value strings.
     /// When both `path` and a literal array are present, the literal seeds the data model once.

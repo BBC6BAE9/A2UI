@@ -25,7 +25,6 @@ final class PrimitivesTests: XCTestCase {
         let value = try JSONDecoder().decode(StringValue.self, from: json)
         XCTAssertEqual(value.literalString, "Hello")
         XCTAssertNil(value.path)
-        XCTAssertNil(value.functionCall)
     }
 
     func testStringValueDecodesV08DictForm() throws {
@@ -34,15 +33,14 @@ final class PrimitivesTests: XCTestCase {
         let value = try JSONDecoder().decode(StringValue.self, from: json)
         XCTAssertEqual(value.literalString, "World")
         XCTAssertEqual(value.path, "name")
-        XCTAssertNil(value.functionCall)
     }
 
-    func testStringValueDecodesFunctionCall() throws {
-        let json = Data(#"{"call":"formatDate","args":{"value":"2026-01-01"}}"#.utf8)
+    func testStringValueDecodesLiteralOnly() throws {
+        let json = Data(#"{"literal":"fallback"}"#.utf8)
         let value = try JSONDecoder().decode(StringValue.self, from: json)
-        XCTAssertNotNil(value.functionCall)
+        XCTAssertEqual(value.literal, "fallback")
+        XCTAssertEqual(value.literalValue, "fallback")
         XCTAssertNil(value.path)
-        XCTAssertNil(value.literalString)
     }
 
     func testStringValueRoundTrip() throws {
@@ -51,17 +49,6 @@ final class PrimitivesTests: XCTestCase {
         let decoded = try JSONDecoder().decode(StringValue.self, from: data)
         XCTAssertEqual(decoded.path, "user")
         XCTAssertEqual(decoded.literalString, "fallback")
-    }
-
-    func testStringValueFunctionCallRoundTrip() throws {
-        let fn: AnyCodable = .dictionary([
-            "call": .string("formatString"),
-            "args": .dictionary(["template": .string("Hi ${name}")])
-        ])
-        let original = StringValue(functionCall: fn)
-        let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(StringValue.self, from: data)
-        XCTAssertNotNil(decoded.functionCall)
     }
 
     // MARK: - NumberValue Decoding
@@ -78,13 +65,6 @@ final class PrimitivesTests: XCTestCase {
         let value = try JSONDecoder().decode(NumberValue.self, from: json)
         XCTAssertEqual(value.literalNumber, 99)
         XCTAssertEqual(value.path, "score")
-    }
-
-    func testNumberValueDecodesFunctionCall() throws {
-        let json = Data(#"{"call":"sum","args":{"values":[1,2,3]}}"#.utf8)
-        let value = try JSONDecoder().decode(NumberValue.self, from: json)
-        XCTAssertNotNil(value.functionCall)
-        XCTAssertNil(value.literalNumber)
     }
 
     func testNumberValueRoundTrip() throws {
@@ -111,13 +91,6 @@ final class PrimitivesTests: XCTestCase {
         XCTAssertEqual(value.path, "active")
     }
 
-    func testBooleanValueDecodesFunctionCall() throws {
-        let json = Data(#"{"call":"isValid","args":{}}"#.utf8)
-        let value = try JSONDecoder().decode(BooleanValue.self, from: json)
-        XCTAssertNotNil(value.functionCall)
-        XCTAssertNil(value.literalBoolean)
-    }
-
     func testBooleanValueRoundTrip() throws {
         let original = BooleanValue(path: "flag", literalBoolean: true)
         let data = try JSONEncoder().encode(original)
@@ -134,7 +107,6 @@ final class PrimitivesTests: XCTestCase {
         let value = try JSONDecoder().decode(StringValue.self, from: json)
         XCTAssertNil(value.path)
         XCTAssertNil(value.literalString)
-        XCTAssertNil(value.functionCall)
     }
 
     func testNumberValueDecodesUnexpectedType() throws {

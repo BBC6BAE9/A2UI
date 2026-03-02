@@ -53,6 +53,9 @@ public struct A2UIStyle: Equatable, Sendable {
     /// Appearance overrides for the CheckBox component.
     public var checkBoxStyle: CheckBoxComponentStyle
 
+    /// Appearance overrides for the MultipleChoice component.
+    public var multipleChoiceStyle: MultipleChoiceComponentStyle
+
     /// Appearance overrides for the Slider component.
     public var sliderStyle: SliderComponentStyle
 
@@ -81,6 +84,7 @@ public struct A2UIStyle: Equatable, Sendable {
         buttonStyles: [String: ButtonVariantStyle] = [:],
         textFieldStyle: TextFieldComponentStyle = .init(),
         checkBoxStyle: CheckBoxComponentStyle = .init(),
+        multipleChoiceStyle: MultipleChoiceComponentStyle = .init(),
         sliderStyle: SliderComponentStyle = .init(),
         dateTimeInputStyle: DateTimeInputComponentStyle = .init(),
         tabsStyle: TabsComponentStyle = .init(),
@@ -97,6 +101,7 @@ public struct A2UIStyle: Equatable, Sendable {
         self.buttonStyles = buttonStyles
         self.textFieldStyle = textFieldStyle
         self.checkBoxStyle = checkBoxStyle
+        self.multipleChoiceStyle = multipleChoiceStyle
         self.sliderStyle = sliderStyle
         self.dateTimeInputStyle = dateTimeInputStyle
         self.tabsStyle = tabsStyle
@@ -119,6 +124,7 @@ public struct A2UIStyle: Equatable, Sendable {
         self.cardStyle = .init()
         self.buttonStyles = [:]
         self.checkBoxStyle = .init()
+        self.multipleChoiceStyle = .init()
         self.textFieldStyle = .init()
         self.sliderStyle = .init()
         self.dateTimeInputStyle = .init()
@@ -329,21 +335,28 @@ public struct A2UIStyle: Equatable, Sendable {
     // MARK: - Card Styling
 
     /// Appearance overrides for the Card container.
+    ///
+    /// All properties are optional. When `nil`, the Card uses system defaults:
+    /// - `padding`: system `.padding()` (no explicit value — lets SwiftUI decide)
+    /// - `cornerRadius`: system-appropriate continuous corner radius
+    /// - `shadow*`: system-appropriate subtle shadow
+    /// - `backgroundColor`: system `.background` ShapeStyle
+    ///
+    /// Set explicit values only when you need to override.
     public struct CardStyle: Equatable, Sendable {
-        public var padding: CGFloat
-        public var cornerRadius: CGFloat
-        public var shadowRadius: CGFloat
-        public var shadowColor: Color
-        public var shadowY: CGFloat
-        /// When nil, uses the system `.background` ShapeStyle.
+        public var padding: CGFloat?
+        public var cornerRadius: CGFloat?
+        public var shadowRadius: CGFloat?
+        public var shadowColor: Color?
+        public var shadowY: CGFloat?
         public var backgroundColor: Color?
 
         public init(
-            padding: CGFloat = 8,
-            cornerRadius: CGFloat = 12,
-            shadowRadius: CGFloat = 4,
-            shadowColor: Color = .black.opacity(0.08),
-            shadowY: CGFloat = 1,
+            padding: CGFloat? = nil,
+            cornerRadius: CGFloat? = nil,
+            shadowRadius: CGFloat? = nil,
+            shadowColor: Color? = nil,
+            shadowY: CGFloat? = nil,
             backgroundColor: Color? = nil
         ) {
             self.padding = padding
@@ -358,22 +371,22 @@ public struct A2UIStyle: Equatable, Sendable {
     // MARK: - TextField Styling
 
     /// Appearance overrides for the TextField component.
+    /// All properties optional — `nil` means use system defaults.
     public struct TextFieldComponentStyle: Equatable, Sendable {
-        public var longTextMinHeight: CGFloat
-        /// When nil, uses the system `.fill.quaternary` ShapeStyle.
+        /// Minimum height for `longText` (TextEditor). Nil → system default.
+        public var longTextMinHeight: CGFloat?
+        /// Background for `longText`. Nil → system `.fill.quaternary`.
         public var longTextBackgroundColor: Color?
-        public var longTextCornerRadius: CGFloat
-        public var errorColor: Color
+        /// Error message color. Nil → system `.red`.
+        public var errorColor: Color?
 
         public init(
-            longTextMinHeight: CGFloat = 100,
+            longTextMinHeight: CGFloat? = nil,
             longTextBackgroundColor: Color? = nil,
-            longTextCornerRadius: CGFloat = 8,
-            errorColor: Color = .red
+            errorColor: Color? = nil
         ) {
             self.longTextMinHeight = longTextMinHeight
             self.longTextBackgroundColor = longTextBackgroundColor
-            self.longTextCornerRadius = longTextCornerRadius
             self.errorColor = errorColor
         }
     }
@@ -394,6 +407,29 @@ public struct A2UIStyle: Equatable, Sendable {
             self.tintColor = tintColor
             self.labelFont = labelFont
             self.labelColor = labelColor
+        }
+    }
+
+    // MARK: - MultipleChoice Styling
+
+    /// Appearance overrides for the MultipleChoice component.
+    /// All properties optional — `nil` means use system defaults.
+    public struct MultipleChoiceComponentStyle: Equatable, Sendable {
+        /// Font for the description label above the choices.
+        public var descriptionFont: Font?
+        /// Color for the description label.
+        public var descriptionColor: Color?
+        /// Tint color for selected chips and checkmarks.
+        public var tintColor: Color?
+
+        public init(
+            descriptionFont: Font? = nil,
+            descriptionColor: Color? = nil,
+            tintColor: Color? = nil
+        ) {
+            self.descriptionFont = descriptionFont
+            self.descriptionColor = descriptionColor
+            self.tintColor = tintColor
         }
     }
 
@@ -423,13 +459,13 @@ public struct A2UIStyle: Equatable, Sendable {
 
     /// Appearance overrides for the Modal component.
     public struct ModalComponentStyle: Equatable, Sendable {
-        /// Whether to show the close button inside the modal. Default `true`.
-        public var showCloseButton: Bool
+        /// Whether to show the close button inside the modal. `nil` = show (system default).
+        public var showCloseButton: Bool?
         /// Padding around the modal content.
         public var contentPadding: CGFloat?
 
         public init(
-            showCloseButton: Bool = true,
+            showCloseButton: Bool? = nil,
             contentPadding: CGFloat? = nil
         ) {
             self.showCloseButton = showCloseButton
@@ -547,7 +583,6 @@ public struct A2UIStyle: Equatable, Sendable {
     public struct ButtonVariantStyle: Equatable, Sendable {
         public var foregroundColor: Color?
         public var backgroundColor: Color?
-        public var pressedOpacity: Double?
         public var cornerRadius: CGFloat?
         public var horizontalPadding: CGFloat?
         public var verticalPadding: CGFloat?
@@ -555,14 +590,12 @@ public struct A2UIStyle: Equatable, Sendable {
         public init(
             foregroundColor: Color? = nil,
             backgroundColor: Color? = nil,
-            pressedOpacity: Double? = nil,
             cornerRadius: CGFloat? = nil,
             horizontalPadding: CGFloat? = nil,
             verticalPadding: CGFloat? = nil
         ) {
             self.foregroundColor = foregroundColor
             self.backgroundColor = backgroundColor
-            self.pressedOpacity = pressedOpacity
             self.cornerRadius = cornerRadius
             self.horizontalPadding = horizontalPadding
             self.verticalPadding = verticalPadding
@@ -696,7 +729,6 @@ extension View {
         for variant: A2UIStyle.ButtonVariant,
         foregroundColor: Color? = nil,
         backgroundColor: Color? = nil,
-        pressedOpacity: Double? = nil,
         cornerRadius: CGFloat? = nil,
         horizontalPadding: CGFloat? = nil,
         verticalPadding: CGFloat? = nil
@@ -705,7 +737,6 @@ extension View {
             var existing = style.buttonStyles[variant.rawValue] ?? .init()
             if let foregroundColor { existing.foregroundColor = foregroundColor }
             if let backgroundColor { existing.backgroundColor = backgroundColor }
-            if let pressedOpacity { existing.pressedOpacity = pressedOpacity }
             if let cornerRadius { existing.cornerRadius = cornerRadius }
             if let horizontalPadding { existing.horizontalPadding = horizontalPadding }
             if let verticalPadding { existing.verticalPadding = verticalPadding }
@@ -722,13 +753,11 @@ extension View {
     public func a2uiTextFieldStyle(
         longTextMinHeight: CGFloat? = nil,
         longTextBackgroundColor: Color? = nil,
-        longTextCornerRadius: CGFloat? = nil,
         errorColor: Color? = nil
     ) -> some View {
         self.transformEnvironment(\.a2uiStyle) { style in
             if let longTextMinHeight { style.textFieldStyle.longTextMinHeight = longTextMinHeight }
             if let longTextBackgroundColor { style.textFieldStyle.longTextBackgroundColor = longTextBackgroundColor }
-            if let longTextCornerRadius { style.textFieldStyle.longTextCornerRadius = longTextCornerRadius }
             if let errorColor { style.textFieldStyle.errorColor = errorColor }
         }
     }
@@ -748,6 +777,24 @@ extension View {
             if let tintColor { style.checkBoxStyle.tintColor = tintColor }
             if let labelFont { style.checkBoxStyle.labelFont = labelFont }
             if let labelColor { style.checkBoxStyle.labelColor = labelColor }
+        }
+    }
+
+    /// Override the appearance of the A2UI MultipleChoice component.
+    ///
+    /// ```swift
+    /// A2UIRendererView(manager: manager)
+    ///     .a2uiMultipleChoiceStyle(tintColor: .purple, descriptionFont: .headline)
+    /// ```
+    public func a2uiMultipleChoiceStyle(
+        descriptionFont: Font? = nil,
+        descriptionColor: Color? = nil,
+        tintColor: Color? = nil
+    ) -> some View {
+        self.transformEnvironment(\.a2uiStyle) { style in
+            if let descriptionFont { style.multipleChoiceStyle.descriptionFont = descriptionFont }
+            if let descriptionColor { style.multipleChoiceStyle.descriptionColor = descriptionColor }
+            if let tintColor { style.multipleChoiceStyle.tintColor = tintColor }
         }
     }
 

@@ -23,8 +23,12 @@ struct SVGPathShape: Shape {
     let svgPath: String
 
     func path(in rect: CGRect) -> Path {
+
         let parsed = parseSVGPath(svgPath)
         guard !parsed.isEmpty else { return Path() }
+
+        // Inset slightly so anti-aliased edges aren't clipped at the boundary.
+        let insetRect = rect.insetBy(dx: rect.width * 0.05, dy: rect.height * 0.05)
 
         // Compute bounding box to scale into rect
         var tempPath = Path()
@@ -32,9 +36,9 @@ struct SVGPathShape: Shape {
         let bounds = tempPath.boundingRect
         guard bounds.width > 0, bounds.height > 0 else { return tempPath }
 
-        let scale = min(rect.width / bounds.width, rect.height / bounds.height)
-        let offsetX = rect.midX - bounds.midX * scale
-        let offsetY = rect.midY - bounds.midY * scale
+        let scale = min(insetRect.width / bounds.width, insetRect.height / bounds.height)
+        let offsetX = insetRect.midX - bounds.midX * scale
+        let offsetY = insetRect.midY - bounds.midY * scale
 
         var finalPath = Path()
         buildPath(&finalPath, from: parsed, in: rect)
@@ -45,6 +49,8 @@ struct SVGPathShape: Shape {
                 .translatedBy(x: offsetX / scale, y: offsetY / scale)
         )
     }
+
+
 
     private enum Command {
         case moveTo(CGPoint, Bool)

@@ -17,6 +17,26 @@ import AVKit
 #endif
 import SwiftUI
 
+// MARK: - Design Notes
+//
+// AVPlayerViewController in ScrollView + LazyVStack causes severe scroll jank
+// on iOS — the system runs Visual Look Up (VKCImageAnalyzer) on every
+// appear/disappear cycle, blocking the main thread.
+//
+// Solution: Singleton SharedPlayerController
+// - One AVPlayerViewController (iOS/tvOS/visionOS) or AVPlayerView (macOS)
+//   shared across ALL Video components globally.
+// - Inactive videos show a poster (async first-frame thumbnail + play button).
+//   Tapping activates the singleton: attaches AVPlayer and reparents the VC's
+//   .view into that video's container. Only one Video plays at a time.
+// - The VC is never created/destroyed during scrolling — zero scroll overhead.
+//
+// Thumbnails are loaded via Task.detached (survives LazyVStack view recycling)
+// and cached on VideoUIState, which persists with SurfaceViewModel.
+// Fetches frame at t=1s to avoid common black first-frames.
+//
+// watchOS: AVKit unavailable, static placeholder only.
+
 struct A2UIVideo: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -35,6 +55,7 @@ struct A2UIVideo: View {
                 VideoNodeView(
                     urlString: urlString,
                     uiState: node.uiState as? VideoUIState,
+                    nodeId: node.id,
                     cornerRadius: cr
                 )
             } else {
@@ -52,80 +73,261 @@ struct A2UIVideo: View {
     }
 }
 
-// MARK: - VideoNodeView
+// MARK: - SharedPlayerController (singleton, mutual exclusion)
 
 #if canImport(AVKit) && !os(watchOS)
-/// Video player that reads its AVPlayer from `VideoUIState` so the player
-/// survives tree rebuilds (LazyVStack recycling no longer destroys it).
+
+/// Global singleton that owns the one and only `AVPlayerViewController`.
+/// All Video components share this instance. Only one Video can be "active"
+/// (playing) at a time — activating a new one deactivates the previous.
+@Observable
+final class SharedPlayerController {
+    static let shared = SharedPlayerController()
+
+    /// The node ID of the currently active Video, or nil if none.
+    var activeNodeId: String?
+
+    #if os(iOS) || os(tvOS) || os(visionOS)
+    /// The single reusable AVPlayerViewController.
+    let playerViewController: AVPlayerViewController = {
+        let vc = AVPlayerViewController()
+        vc.entersFullScreenWhenPlaybackBegins = false
+        if #available(iOS 16.0, tvOS 16.0, visionOS 1.0, *) {
+            vc.allowsVideoFrameAnalysis = false
+        }
+        return vc
+    }()
+    #endif
+
+    #if os(macOS)
+    let playerView: AVPlayerView = {
+        let view = AVPlayerView()
+        view.controlsStyle = .inline
+        return view
+    }()
+    #endif
+
+    private init() {}
+
+    /// Activate a Video node: attach the player and start playback.
+    func activate(nodeId: String, player: AVPlayer) {
+        // Deactivate previous if different.
+        if activeNodeId != nil, activeNodeId != nodeId {
+            deactivate()
+        }
+        activeNodeId = nodeId
+        #if os(iOS) || os(tvOS) || os(visionOS)
+        playerViewController.player = player
+        #elseif os(macOS)
+        playerView.player = player
+        #endif
+        player.play()
+    }
+
+    /// Deactivate the current Video: pause and detach player.
+    func deactivate() {
+        #if os(iOS) || os(tvOS) || os(visionOS)
+        playerViewController.player?.pause()
+        playerViewController.player = nil
+        #elseif os(macOS)
+        playerView.player?.pause()
+        playerView.player = nil
+        #endif
+        activeNodeId = nil
+    }
+}
+
+// MARK: - VideoNodeView
+
 struct VideoNodeView: View {
     let urlString: String
     var uiState: VideoUIState?
+    let nodeId: String
     var cornerRadius: CGFloat = 10
 
+    private var shared: SharedPlayerController { .shared }
+    private var isActive: Bool { shared.activeNodeId == nodeId }
+
     var body: some View {
-        Group {
-            if let player = uiState?.player {
-                SystemVideoPlayer(player: player)
+        ZStack {
+            if isActive {
+                EmbeddedPlayerView()
             } else {
-                Color.clear.background(.fill.tertiary)
-                    .overlay { ProgressView() }
+                posterView
             }
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(16 / 9, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .onAppear {
-            guard let uiState, uiState.player == nil,
-                  let url = URL(string: urlString) else { return }
-            uiState.player = AVPlayer(url: url)
+        .task {
+            await loadThumbnailIfNeeded()
         }
         .onDisappear {
-            uiState?.player?.pause()
+            if isActive {
+                shared.deactivate()
+            }
+        }
+    }
+
+    // MARK: - Poster
+
+    private var posterView: some View {
+        Button {
+            if let uiState {
+                if uiState.player == nil, let url = URL(string: urlString) {
+                    uiState.player = AVPlayer(url: url)
+                }
+                if let player = uiState.player {
+                    shared.activate(nodeId: nodeId, player: player)
+                }
+            }
+        } label: {
+            ZStack {
+                thumbnailBackground
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 56, height: 56)
+                    .overlay {
+                        Image(systemName: "play.fill")
+                            .font(.title2)
+                            .foregroundStyle(.primary)
+                            .offset(x: 2)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var thumbnailBackground: some View {
+        #if canImport(UIKit) && !os(watchOS)
+        if let thumb = uiState?.thumbnail {
+            Image(uiImage: thumb)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else {
+            Color.clear.background(.fill.tertiary)
+        }
+        #elseif canImport(AppKit)
+        if let thumb = uiState?.thumbnail {
+            Image(nsImage: thumb)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else {
+            Color.clear.background(.fill.tertiary)
+        }
+        #else
+        Color.clear.background(.fill.tertiary)
+        #endif
+    }
+
+    // MARK: - Thumbnail
+
+    /// Kicks off thumbnail generation in a detached task so it survives
+    /// SwiftUI view lifecycle cancellation (LazyVStack recycling).
+    private func loadThumbnailIfNeeded() async {
+        guard let uiState, !uiState.thumbnailLoaded else { return }
+        // Mark immediately to prevent duplicate loads.
+        uiState.thumbnailLoaded = true
+
+        let urlStr = urlString
+        Task.detached(priority: .utility) {
+            guard let url = URL(string: urlStr) else { return }
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 640, height: 360)
+
+            // Request 1 s in — many videos have a black frame at 0 s.
+            // The generator snaps to the nearest available keyframe.
+            let time = CMTime(seconds: 1, preferredTimescale: 600)
+            let cgImage: CGImage?
+            if #available(iOS 16.0, macOS 13.0, tvOS 16.0, visionOS 1.0, *) {
+                cgImage = try? await generator.image(at: time).image
+            } else {
+                cgImage = try? generator.copyCGImage(at: time, actualTime: nil)
+            }
+            guard let cgImage else { return }
+
+            await MainActor.run {
+                #if canImport(UIKit) && !os(watchOS)
+                uiState.thumbnail = UIImage(cgImage: cgImage)
+                #elseif canImport(AppKit)
+                uiState.thumbnail = NSImage(
+                    cgImage: cgImage,
+                    size: NSSize(width: cgImage.width, height: cgImage.height)
+                )
+                #endif
+            }
         }
     }
 }
 
-#if os(iOS) || os(tvOS)
-struct SystemVideoPlayer: UIViewControllerRepresentable {
-    let player: AVPlayer
+// MARK: - EmbeddedPlayerView
 
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.player = player
-        return controller
+/// Embeds the singleton AVPlayerViewController into the SwiftUI hierarchy
+/// by adding its view as a subview of a container UIView. This avoids
+/// SwiftUI's make/dismantle lifecycle — the VC is never recreated.
+#if os(iOS) || os(tvOS) || os(visionOS)
+struct EmbeddedPlayerView: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.backgroundColor = .clear
+
+        let shared = SharedPlayerController.shared
+        let vc = shared.playerViewController
+        // The VC's view is added directly. Parent VC management is handled
+        // by UIViewRepresentable's internal coordinator.
+        vc.view.frame = container.bounds
+        vc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(vc.view)
+
+        return container
     }
 
-    func updateUIViewController(
-        _ controller: AVPlayerViewController, context: Context
-    ) {
-        if controller.player !== player {
-            controller.player = player
+    func updateUIView(_ container: UIView, context: Context) {
+        let vc = SharedPlayerController.shared.playerViewController
+        if vc.view.superview !== container {
+            vc.view.frame = container.bounds
+            vc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            container.addSubview(vc.view)
+        }
+    }
+
+    static func dismantleUIView(_ container: UIView, coordinator: ()) {
+        // Remove the VC's view from this container but do NOT release the VC.
+        let vc = SharedPlayerController.shared.playerViewController
+        if vc.view.superview === container {
+            vc.view.removeFromSuperview()
         }
     }
 }
 #elseif os(macOS)
-struct SystemVideoPlayer: NSViewRepresentable {
-    let player: AVPlayer
-
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.player = player
-        view.controlsStyle = .inline
-        return view
+struct EmbeddedPlayerView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        let shared = SharedPlayerController.shared
+        let playerView = shared.playerView
+        playerView.frame = container.bounds
+        playerView.autoresizingMask = [.width, .height]
+        container.addSubview(playerView)
+        return container
     }
 
-    func updateNSView(_ view: AVPlayerView, context: Context) {
-        if view.player !== player {
-            view.player = player
+    func updateNSView(_ container: NSView, context: Context) {
+        let playerView = SharedPlayerController.shared.playerView
+        if playerView.superview !== container {
+            playerView.frame = container.bounds
+            playerView.autoresizingMask = [.width, .height]
+            container.addSubview(playerView)
         }
     }
-}
-#else
-struct SystemVideoPlayer: View {
-    let player: AVPlayer
 
-    var body: some View {
-        VideoPlayer(player: player)
+    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+        let playerView = SharedPlayerController.shared.playerView
+        if playerView.superview === container {
+            playerView.removeFromSuperview()
+        }
     }
 }
 #endif
@@ -135,6 +337,7 @@ struct SystemVideoPlayer: View {
 struct VideoNodeView: View {
     let urlString: String
     var uiState: VideoUIState?
+    let nodeId: String
     var cornerRadius: CGFloat = 10
 
     var body: some View {

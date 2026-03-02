@@ -109,7 +109,10 @@ struct AudioPlayerNodeView: View {
         .task(id: url) {
             guard let uiState, uiState.player == nil,
                   !url.isEmpty, let mediaUrl = URL(string: url) else { return }
-            let player = AVPlayer(url: mediaUrl)
+            let player = await Task.detached(priority: .userInitiated) {
+                AVPlayer(url: mediaUrl)
+            }.value
+            guard !Task.isCancelled else { return }
             uiState.player = player
             setupTimeObserver(player: player, state: uiState)
             observeDuration(player: player, state: uiState)

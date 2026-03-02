@@ -14,6 +14,11 @@
 
 import SwiftUI
 
+/// # Image
+/// Uses `AsyncImage` for remote URLs. Sizing is driven by `usageHint` (avatar/icon/header/etc.)
+/// with sensible defaults, overridable via `A2UIStyle.imageStyles`. The `fit` property maps to
+/// `contentMode` (.fit/.fill) plus `clipped()`. Avatar uses `Circle()` clip; others use
+/// `RoundedRectangle`. Placeholder shown on failure or invalid URL.
 struct A2UIImage: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -27,7 +32,7 @@ struct A2UIImage: View {
             let urlString = viewModel.resolveString(
                 props.url, dataContextPath: dataContextPath
             )
-            let hint = props.variant
+            let hint = props.usageHint
             let defaults = defaultImageSizing(for: hint)
             let override = style.imageStyles[hint ?? ""]
             let sizing = ImageSizing(
@@ -36,9 +41,9 @@ struct A2UIImage: View {
             )
             let radius = override?.cornerRadius ?? defaultCornerRadius(for: hint)
 
-            if !urlString.isEmpty, urlString.hasPrefix("http://") || urlString.hasPrefix("https://") {
-                // Remote URL — use AsyncImage
-                if let url = URL(string: urlString) {
+            if let url = URL(string: urlString),
+               let scheme = url.scheme, ["http", "https"].contains(scheme) {
+                clippedImage(hint: hint, radius: radius, sizing: sizing) {
                     AsyncImage(url: url) { phase in
                         switch phase {
                         case .success(let image):
@@ -50,35 +55,11 @@ struct A2UIImage: View {
                                 .frame(width: sizing.width, height: sizing.height)
                         }
                     }
-                    .frame(width: sizing.width, height: sizing.height)
-                    .frame(maxWidth: sizing.width == nil ? .infinity : nil)
-                    .clipped()
-                    .clipShape(hint == "avatar" && radius >= 1000
-                        ? AnyShape(Circle())
-                        : AnyShape(RoundedRectangle(cornerRadius: radius)))
-                } else {
-                    imagePlaceholder(sizing)
                 }
-            } else if !urlString.isEmpty {
-                // Local asset path — load from bundle
-                let assetName = Self.extractAssetName(from: urlString)
-                fitImage(Image(assetName, bundle: .main), fit: props.fit, sizing: sizing)
-                    .frame(width: sizing.width, height: sizing.height)
-                    .frame(maxWidth: sizing.width == nil ? .infinity : nil)
-                    .clipped()
-                    .clipShape(hint == "avatar" && radius >= 1000
-                        ? AnyShape(Circle())
-                        : AnyShape(RoundedRectangle(cornerRadius: radius)))
             } else {
                 imagePlaceholder(sizing)
             }
         }
-    }
-
-    /// Extract the asset catalog name from a path like "assets/travel_images/santorini_panorama.jpg".
-    /// Strips directory prefixes and file extension → "santorini_panorama".
-    static func extractAssetName(from path: String) -> String {
-        a2uiExtractAssetName(from: path)
     }
 
     private struct ImageSizing {
@@ -99,7 +80,22 @@ struct A2UIImage: View {
     }
 
     private func defaultCornerRadius(for hint: String?) -> CGFloat {
-        hint == "avatar" ? .infinity : 4
+        hint == "avatar" ? 0 : 4  // avatar uses Circle clip; radius unused
+    }
+
+    private func clippedImage(
+        hint: String?,
+        radius: CGFloat,
+        sizing: ImageSizing,
+        @ViewBuilder content: () -> some View
+    ) -> some View {
+        content()
+            .frame(width: sizing.width, height: sizing.height)
+            .frame(maxWidth: sizing.width == nil ? .infinity : nil)
+            .clipped()
+            .clipShape(hint == "avatar"
+                ? AnyShape(Circle())
+                : AnyShape(RoundedRectangle(cornerRadius: radius)))
     }
 
     @ViewBuilder
@@ -111,7 +107,7 @@ struct A2UIImage: View {
             image.resizable()
         case "none":
             image
-        case "scaleDown":
+        case "scale-down":
             image.resizable().aspectRatio(contentMode: .fit)
                 .frame(maxWidth: sizing.width, maxHeight: sizing.height)
         default:
@@ -126,20 +122,10 @@ struct A2UIImage: View {
             .frame(maxWidth: sizing.width == nil ? .infinity : nil)
             .overlay {
                 Image(systemName: "photo")
-                    .font(sizing.width != nil && sizing.width! < 50 ? .caption : .largeTitle)
+                    .font((sizing.width ?? .infinity) < 50 ? .caption : .largeTitle)
                     .foregroundStyle(.tertiary)
             }
     }
-}
-
-// MARK: - Public Asset Name Utility
-
-/// Extract the asset catalog name from a path like "assets/travel_images/santorini_panorama.jpg".
-/// Strips directory prefixes and file extension → "santorini_panorama".
-public func a2uiExtractAssetName(from path: String) -> String {
-    let filename = (path as NSString).lastPathComponent
-    let name = (filename as NSString).deletingPathExtension
-    return name.isEmpty ? path : name
 }
 
 // MARK: - Previews
@@ -147,7 +133,7 @@ public func a2uiExtractAssetName(from path: String) -> String {
 #Preview("Image - Default") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://picsum.photos/id/10/600/300"}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&h=180&fit=crop"}}}}]}}
     """) {
         A2UIImage(node: root, viewModel: vm).padding()
     }
@@ -156,7 +142,7 @@ public func a2uiExtractAssetName(from path: String) -> String {
 #Preview("Image - Avatar") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://picsum.photos/id/64/200/200"},"variant":"avatar"}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://images.unsplash.com/photo-1555126634-323283e090fa?w=200&h=200&fit=crop"},"usageHint":"avatar"}}}]}}
     """) {
         A2UIImage(node: root, viewModel: vm).padding()
     }
@@ -165,7 +151,25 @@ public func a2uiExtractAssetName(from path: String) -> String {
 #Preview("Image - Header") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://picsum.photos/id/10/800/400"},"variant":"header","fit":"cover"}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=200&h=200&fit=crop"},"usageHint":"header","fit":"cover"}}}]}}
+    """) {
+        A2UIImage(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("Image - Icon") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=200&h=200&fit=crop"},"usageHint":"icon"}}}]}}
+    """) {
+        A2UIImage(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("Image - Scale Down") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Image":{"url":{"literalString":"https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&h=180&fit=crop"},"usageHint":"largeFeature","fit":"scale-down"}}}]}}
     """) {
         A2UIImage(node: root, viewModel: vm).padding()
     }

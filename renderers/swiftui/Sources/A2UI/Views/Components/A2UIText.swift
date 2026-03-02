@@ -14,6 +14,10 @@
 
 import SwiftUI
 
+/// # Text
+/// Maps `usageHint` (h1–h5, caption, body) to semantic `Font` and `AccessibilityHeadingLevel`.
+/// Supports inline Markdown via `AttributedString(markdown:)`. Styles are overridable through
+/// `A2UIStyle.textStyles` (font, weight, color per hint). Caption defaults to `.secondary` color.
 struct A2UIText: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -27,21 +31,32 @@ struct A2UIText: View {
             let resolved = viewModel.resolveString(
                 props.text, dataContextPath: dataContextPath
             )
-            let hint = props.variant
+            let hint = props.usageHint
             let override = style.textStyles[hint ?? "body"]
-            let base = Text(markdownAttributedString(resolved))
-                .font(override?.font ?? defaultFontForVariant(hint))
-                .fontWeight(override?.weight ?? defaultWeightForVariant(hint))
 
-            if let color = override?.color ?? optionalColorForVariant(hint) {
-                base.foregroundStyle(color)
-            } else {
-                base
-            }
+            styledText(resolved, hint: hint, override: override)
         }
     }
 
-    private func defaultFontForVariant(_ hint: String?) -> Font {
+    private func styledText(
+        _ resolved: String,
+        hint: String?,
+        override: A2UIStyle.TextStyle?
+    ) -> some View {
+        let weight = override?.weight
+        let color = override?.color ?? defaultColor(for: hint)
+        let level = accessibilityHeadingLevel(for: hint)
+
+        return Text(markdownAttributedString(resolved))
+            .font(override?.font ?? defaultFont(for: hint))
+            .fontWeight(weight)
+            .foregroundColor(color)
+            .accessibilityAddTraits(level != nil ? .isHeader : [])
+            .accessibilityHeading(level ?? .unspecified)
+    }
+
+    /// Default semantic font for the given usageHint.
+    private func defaultFont(for hint: String?) -> Font {
         switch hint {
         case "h1": return .largeTitle
         case "h2": return .title
@@ -53,16 +68,23 @@ struct A2UIText: View {
         }
     }
 
-    private func defaultWeightForVariant(_ hint: String?) -> Font.Weight? {
-        switch hint {
-        case "h1", "h2", "h3": return .semibold
-        case "h4", "h5": return .medium
-        default: return nil
-        }
+    /// Default foreground color for the given usageHint (nil = inherit).
+    private func defaultColor(for hint: String?) -> Color? {
+        hint == "caption" ? .secondary : nil
     }
 
-    private func optionalColorForVariant(_ hint: String?) -> Color? {
-        hint == "caption" ? .secondary : nil
+    /// Maps heading hints to VoiceOver heading levels.
+    private func accessibilityHeadingLevel(
+        for hint: String?
+    ) -> AccessibilityHeadingLevel? {
+        switch hint {
+        case "h1": return .h1
+        case "h2": return .h2
+        case "h3": return .h3
+        case "h4": return .h4
+        case "h5": return .h5
+        default: return nil
+        }
     }
 
     private func markdownAttributedString(_ string: String) -> AttributedString {
@@ -84,7 +106,7 @@ struct A2UIText: View {
 #Preview("Text - Headings") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Column":{"children":{"explicitList":["h1","h2","h3","h4","h5"]}}}},{"id":"h1","component":{"Text":{"text":{"literalString":"Heading 1"},"variant":"h1"}}},{"id":"h2","component":{"Text":{"text":{"literalString":"Heading 2"},"variant":"h2"}}},{"id":"h3","component":{"Text":{"text":{"literalString":"Heading 3"},"variant":"h3"}}},{"id":"h4","component":{"Text":{"text":{"literalString":"Heading 4"},"variant":"h4"}}},{"id":"h5","component":{"Text":{"text":{"literalString":"Heading 5"},"variant":"h5"}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Column":{"children":{"explicitList":["h1","h2","h3","h4","h5"]}}}},{"id":"h1","component":{"Text":{"text":{"literalString":"Heading 1"},"usageHint":"h1"}}},{"id":"h2","component":{"Text":{"text":{"literalString":"Heading 2"},"usageHint":"h2"}}},{"id":"h3","component":{"Text":{"text":{"literalString":"Heading 3"},"usageHint":"h3"}}},{"id":"h4","component":{"Text":{"text":{"literalString":"Heading 4"},"usageHint":"h4"}}},{"id":"h5","component":{"Text":{"text":{"literalString":"Heading 5"},"usageHint":"h5"}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }
@@ -93,7 +115,7 @@ struct A2UIText: View {
 #Preview("Text - Caption") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Text":{"text":{"literalString":"This is a caption"},"variant":"caption"}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Text":{"text":{"literalString":"This is a caption"},"usageHint":"caption"}}}]}}
     """) {
         A2UIText(node: root, viewModel: vm).padding()
     }

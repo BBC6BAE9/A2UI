@@ -57,7 +57,7 @@ final class MessageDecodingTests: XCTestCase {
         XCTAssertEqual(userHeading.component?.componentType, .Text)
         let textProps = try userHeading.component?.typedProperties(TextProperties.self)
         XCTAssertNotNil(textProps)
-        XCTAssertEqual(textProps?.variant, "h2")
+        XCTAssertEqual(textProps?.usageHint, "h2")
         XCTAssertNotNil(textProps?.text.path)
         XCTAssertEqual(textProps?.text.path, "name")
 
@@ -67,26 +67,26 @@ final class MessageDecodingTests: XCTestCase {
         XCTAssertNotNil(buttonProps)
         XCTAssertEqual(buttonProps?.child, "button_1_text")
         XCTAssertEqual(buttonProps?.action.name, "follow_contact")
-        XCTAssertEqual(buttonProps?.variant, "primary")
+        XCTAssertEqual(buttonProps?.primary, true)
 
         let mainColumn = vm.components["main_column"]!
         XCTAssertEqual(mainColumn.component?.componentType, .Column)
         let columnProps = try mainColumn.component?.typedProperties(ColumnProperties.self)
         XCTAssertNotNil(columnProps)
         XCTAssertEqual(columnProps?.children.explicitList?.count, 6)
-        XCTAssertEqual(columnProps?.align, "stretch")
+        XCTAssertEqual(columnProps?.alignment, "stretch")
 
         let infoRow1 = vm.components["info_row_1"]!
         XCTAssertEqual(infoRow1.component?.componentType, .Row)
         let rowProps = try infoRow1.component?.typedProperties(RowProperties.self)
         XCTAssertNotNil(rowProps)
-        XCTAssertEqual(rowProps?.justify, "start")
+        XCTAssertEqual(rowProps?.distribution, "start")
 
         let profileImage = vm.components["profile_image"]!
         XCTAssertEqual(profileImage.component?.componentType, .Image)
         let imageProps = try profileImage.component?.typedProperties(ImageProperties.self)
         XCTAssertNotNil(imageProps)
-        XCTAssertEqual(imageProps?.variant, "avatar")
+        XCTAssertEqual(imageProps?.usageHint, "avatar")
         XCTAssertEqual(imageProps?.fit, "cover")
     }
 
@@ -133,7 +133,7 @@ final class MessageDecodingTests: XCTestCase {
 
     func testTabsPropertiesParsing() throws {
         let json: [String: AnyCodable] = [
-            "tabs": .array([
+            "tabItems": .array([
                 .dictionary([
                     "title": .dictionary(["literalString": .string("Tab A")]),
                     "child": .string("child_a")
@@ -146,27 +146,27 @@ final class MessageDecodingTests: XCTestCase {
         ]
         let data = try! JSONEncoder().encode(json)
         let props = try! JSONDecoder().decode(TabsProperties.self, from: data)
-        XCTAssertEqual(props.tabs.count, 2)
-        XCTAssertEqual(props.tabs[0].title.literalString, "Tab A")
-        XCTAssertEqual(props.tabs[0].child, "child_a")
-        XCTAssertEqual(props.tabs[1].title.literalString, "Tab B")
-        XCTAssertEqual(props.tabs[1].child, "child_b")
+        XCTAssertEqual(props.tabItems.count, 2)
+        XCTAssertEqual(props.tabItems[0].title.literalString, "Tab A")
+        XCTAssertEqual(props.tabItems[0].child, "child_a")
+        XCTAssertEqual(props.tabItems[1].title.literalString, "Tab B")
+        XCTAssertEqual(props.tabItems[1].child, "child_b")
     }
 
     func testModalPropertiesParsing() throws {
         let json: [String: AnyCodable] = [
-            "trigger": .string("open_btn"),
-            "content": .string("modal_content")
+            "entryPointChild": .string("open_btn"),
+            "contentChild": .string("modal_content")
         ]
         let data = try! JSONEncoder().encode(json)
         let props = try! JSONDecoder().decode(ModalProperties.self, from: data)
-        XCTAssertEqual(props.trigger, "open_btn")
-        XCTAssertEqual(props.content, "modal_content")
+        XCTAssertEqual(props.entryPointChild, "open_btn")
+        XCTAssertEqual(props.contentChild, "modal_content")
     }
 
     func testMultipleChoicePropertiesParsing() throws {
         let json: [String: AnyCodable] = [
-            "value": .dictionary([
+            "selections": .dictionary([
                 "path": .string("/selectedFruits")
             ]),
             "options": .array([
@@ -183,17 +183,17 @@ final class MessageDecodingTests: XCTestCase {
                     "value": .string("cherry")
                 ])
             ]),
-            "displayStyle": .string("chips"),
+            "variant": .string("chips"),
             "filterable": .bool(true)
         ]
         let data = try! JSONEncoder().encode(json)
-        let props = try! JSONDecoder().decode(ChoicePickerProperties.self, from: data)
-        XCTAssertEqual(props.value?.path, "/selectedFruits")
-        XCTAssertNil(props.value?.literalArray)
+        let props = try! JSONDecoder().decode(MultipleChoiceProperties.self, from: data)
+        XCTAssertEqual(props.selections?.path, "/selectedFruits")
+        XCTAssertNil(props.selections?.literalArray)
         XCTAssertEqual(props.options?.count, 3)
         XCTAssertEqual(props.options?[0].label.literalString, "Apple")
         XCTAssertEqual(props.options?[0].value, "apple")
-        XCTAssertEqual(props.displayStyle, "chips")
+        XCTAssertEqual(props.variant, "chips")
         XCTAssertEqual(props.filterable, true)
     }
 
@@ -232,7 +232,7 @@ final class MessageDecodingTests: XCTestCase {
         let props = try partySizeField.component!.typedProperties(TextFieldProperties.self)
         XCTAssertNotNil(props)
         XCTAssertEqual(props.label.literalValue, "Party Size")
-        XCTAssertEqual(props.value?.path, "partySize")
+        XCTAssertEqual(props.text?.path, "partySize")
     }
 
     func testDateTimeInputPropertiesParsing() throws {

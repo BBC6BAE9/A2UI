@@ -134,34 +134,6 @@ func a2uiDateBinding(
     )
 }
 
-// MARK: - Checks Helpers
-
-func a2uiChecksMessages(
-    for checks: [CheckRule]?,
-    viewModel: SurfaceViewModel,
-    dataContextPath: String
-) -> [String] {
-    guard let checks, !checks.isEmpty else { return [] }
-    return ChecksEvaluator.failedMessages(
-        checks: checks,
-        viewModel: viewModel,
-        dataContextPath: dataContextPath
-    )
-}
-
-func a2uiAllChecksPassed(
-    _ checks: [CheckRule]?,
-    viewModel: SurfaceViewModel,
-    dataContextPath: String
-) -> Bool {
-    guard let checks, !checks.isEmpty else { return true }
-    return ChecksEvaluator.allPass(
-        checks: checks,
-        viewModel: viewModel,
-        dataContextPath: dataContextPath
-    )
-}
-
 // MARK: - Layout Helpers
 
 /// Lay out children according to a justify mode (maps to CSS justify-content).

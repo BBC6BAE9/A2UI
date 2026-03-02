@@ -14,6 +14,20 @@
 
 import SwiftUI
 
+/// Spec v0.8 List — scrollable container for children.
+///
+/// Spec properties:
+/// - `children` (required): explicitList or template — items to display
+/// - `direction` (optional): "vertical" | "horizontal" (defaults to vertical)
+/// - `alignment` (optional): "start" | "center" | "end" | "stretch" — cross-axis alignment
+///
+/// ## Rendering strategy: `ScrollView` + `LazyVStack` / `LazyHStack`.
+///
+/// List is a pure layout container — no tap/hover/focus handling.
+/// Interaction is the responsibility of child components (e.g. Button).
+///
+/// ## Platform behavior:
+/// - All platforms: system `ScrollView` with lazy stacks for performance.
 struct A2UIList: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -22,15 +36,15 @@ struct A2UIList: View {
         if let props = try? node.payload.typedProperties(ListProperties.self) {
             let isHorizontal = props.direction == "horizontal"
 
-            ScrollView(isHorizontal ? .horizontal : .vertical, showsIndicators: false) {
+            ScrollView(isHorizontal ? .horizontal : .vertical) {
                 if isHorizontal {
-                    LazyHStack(alignment: a2uiVerticalAlignment(props.align), spacing: 0) {
+                    LazyHStack(alignment: a2uiVerticalAlignment(props.alignment)) {
                         ForEach(node.children) { child in
                             A2UIComponentView(node: child, viewModel: viewModel)
                         }
                     }
                 } else {
-                    LazyVStack(alignment: a2uiHorizontalAlignment(props.align), spacing: 0) {
+                    LazyVStack(alignment: a2uiHorizontalAlignment(props.alignment)) {
                         ForEach(node.children) { child in
                             A2UIComponentView(node: child, viewModel: viewModel)
                         }

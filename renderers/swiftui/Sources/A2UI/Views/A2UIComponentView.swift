@@ -81,8 +81,8 @@ public struct A2UIComponentView: View {
             A2UITabs(node: node, viewModel: viewModel)
         case .Modal:
             A2UIModal(node: node, viewModel: viewModel)
-        case .ChoicePicker:
-            A2UIChoicePicker(node: node, viewModel: viewModel)
+        case .MultipleChoice:
+            A2UIMultipleChoice(node: node, viewModel: viewModel)
         case .custom:
             A2UICustom(node: node, viewModel: viewModel)
         }

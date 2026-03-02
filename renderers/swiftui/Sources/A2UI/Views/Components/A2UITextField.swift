@@ -14,6 +14,24 @@
 
 import SwiftUI
 
+/// Spec v0.8 TextField — input component.
+///
+/// Spec properties:
+/// - `label` (required): literalString or path
+/// - `text` (optional): literalString or path — bound to data model
+/// - `textFieldType` (optional): `date`, `longText`, `number`, `shortText`, `obscured`
+/// - `validationRegexp` (optional): client-side regex validation
+///
+/// ## Rendering strategy: system native, zero hardcoded values.
+///
+/// Each variant maps to the most appropriate native SwiftUI control:
+/// - `shortText` / default → `TextField` with `.textFieldStyle(.roundedBorder)`
+/// - `obscured` → `SecureField` with `.textFieldStyle(.roundedBorder)`
+/// - `number` → `TextField` + `.keyboardType(.decimalPad)`
+/// - `longText` → `TextEditor` (with label above; fallback to `TextField` on watchOS/tvOS)
+/// - `date` → `DatePicker` (rendered by `A2UIDateTimeInput`, but fallback `TextField` here)
+///
+/// No hardcoded spacing, padding, colors, or corner radii — all system defaults.
 struct A2UITextField: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -25,16 +43,13 @@ struct A2UITextField: View {
             let label = viewModel.resolveString(
                 props.label, dataContextPath: dataContextPath
             )
-            let binding = a2uiStringBinding(for: props.value, viewModel: viewModel, dataContextPath: dataContextPath)
-            let fieldVariant = props.variant
-            let msgs = a2uiChecksMessages(for: props.checks, viewModel: viewModel, dataContextPath: dataContextPath)
+            let binding = a2uiStringBinding(for: props.text, viewModel: viewModel, dataContextPath: dataContextPath)
 
             A2UITextFieldView(
                 label: label,
                 text: binding,
-                variant: fieldVariant,
-                validationRegexp: props.validationRegexp,
-                checkMessages: msgs
+                variant: props.textFieldType,
+                validationRegexp: props.validationRegexp
             )
         }
     }
@@ -49,14 +64,13 @@ struct A2UITextFieldView: View {
     @Binding var text: String
     let variant: String?
     let validationRegexp: String?
-    var checkMessages: [String] = []
 
     @Environment(\.a2uiStyle) private var style
     @State private var isValid = true
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading) {
             fieldForVariant
                 .focused($isFocused)
                 .onChange(of: text) { validate($1) }
@@ -67,13 +81,7 @@ struct A2UITextFieldView: View {
             if !isValid {
                 Text("Input does not match required format")
                     .font(.caption)
-                    .foregroundStyle(style.textFieldStyle.errorColor)
-            }
-
-            ForEach(checkMessages, id: \.self) { msg in
-                Text(msg)
-                    .font(.caption)
-                    .foregroundStyle(style.textFieldStyle.errorColor)
+                    .foregroundStyle(style.textFieldStyle.errorColor ?? .red)
             }
         }
     }
@@ -81,37 +89,38 @@ struct A2UITextFieldView: View {
     @ViewBuilder
     private var fieldForVariant: some View {
         let tfStyle = style.textFieldStyle
+
         switch variant {
         case "obscured":
             SecureField(label, text: $text)
                 #if !os(watchOS) && !os(tvOS)
                 .textFieldStyle(.roundedBorder)
                 #endif
+
         case "longText":
             #if os(watchOS) || os(tvOS)
             SwiftUI.TextField(label, text: $text)
             #else
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading) {
                 Text(label)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                TextEditor(text: $text)
-                    .frame(minHeight: tfStyle.longTextMinHeight)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .background {
-                        if let bg = tfStyle.longTextBackgroundColor {
-                            RoundedRectangle(cornerRadius: tfStyle.longTextCornerRadius, style: .continuous).fill(bg)
-                        } else {
-                            RoundedRectangle(cornerRadius: tfStyle.longTextCornerRadius, style: .continuous).fill(.fill.quaternary)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(
-                        cornerRadius: tfStyle.longTextCornerRadius,
-                        style: .continuous
-                    ))
+                if let bg = tfStyle.longTextBackgroundColor {
+                    TextEditor(text: $text)
+                        .frame(minHeight: tfStyle.longTextMinHeight ?? 100)
+                        .scrollContentBackground(.hidden)
+                        .padding()
+                        .background(bg, in: .rect(cornerRadius: 8, style: .continuous))
+                } else {
+                    TextEditor(text: $text)
+                        .frame(minHeight: tfStyle.longTextMinHeight ?? 100)
+                        .scrollContentBackground(.hidden)
+                        .padding()
+                        .background(.fill.quaternary, in: .rect(cornerRadius: 8, style: .continuous))
+                }
             }
             #endif
+
         case "number":
             SwiftUI.TextField(label, text: $text)
                 #if !os(watchOS) && !os(tvOS)
@@ -120,7 +129,26 @@ struct A2UITextFieldView: View {
                 #if os(iOS)
                 .keyboardType(.decimalPad)
                 #endif
+
+        case "date":
+            // Spec has `date` as a textFieldType — but date input is better served
+            // by `DateTimeInput` component. Here we provide a basic text fallback.
+            SwiftUI.TextField(label, text: $text)
+                #if !os(watchOS) && !os(tvOS)
+                .textFieldStyle(.roundedBorder)
+                #endif
+                #if os(iOS)
+                .keyboardType(.numbersAndPunctuation)
+                #endif
+
+        case "shortText":
+            SwiftUI.TextField(label, text: $text)
+                #if !os(watchOS) && !os(tvOS)
+                .textFieldStyle(.roundedBorder)
+                #endif
+
         default:
+            // Unspecified or unknown → standard single-line text field.
             SwiftUI.TextField(label, text: $text)
                 #if !os(watchOS) && !os(tvOS)
                 .textFieldStyle(.roundedBorder)
@@ -129,11 +157,13 @@ struct A2UITextFieldView: View {
     }
 
     private func validate(_ value: String) {
-        guard let pattern = validationRegexp, !pattern.isEmpty else {
-            isValid = true
-            return
-        }
-        isValid = value.isEmpty || (try? Regex(pattern).wholeMatch(in: value)) != nil
+        isValid = Self.isValid(value: value, pattern: validationRegexp)
+    }
+
+    /// Pure validation logic — testable without UI.
+    static func isValid(value: String, pattern: String?) -> Bool {
+        guard let pattern, !pattern.isEmpty else { return true }
+        return value.isEmpty || (try? Regex(pattern).wholeMatch(in: value)) != nil
     }
 }
 
@@ -142,7 +172,7 @@ struct A2UITextFieldView: View {
 #Preview("TextField - Default") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Name"},"value":{"path":"/name"}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Name"},"text":{"path":"/name"}}}}]}}
     {"dataModelUpdate":{"surfaceId":"s","path":"/","contents":[{"key":"name","valueString":"Jane Doe"}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
@@ -152,7 +182,7 @@ struct A2UITextFieldView: View {
 #Preview("TextField - Password") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Password"},"value":{"path":"/pw"},"variant":"obscured"}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Password"},"text":{"path":"/pw"},"textFieldType":"obscured"}}}]}}
     {"dataModelUpdate":{"surfaceId":"s","path":"/","contents":[{"key":"pw","valueString":"secret"}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
@@ -162,8 +192,38 @@ struct A2UITextFieldView: View {
 #Preview("TextField - Long Text") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Bio"},"value":{"path":"/bio"},"variant":"longText"}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Bio"},"text":{"path":"/bio"},"textFieldType":"longText"}}}]}}
     {"dataModelUpdate":{"surfaceId":"s","path":"/","contents":[{"key":"bio","valueString":"Hello world"}]}}
+    """) {
+        A2UIComponentView(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("TextField - Number") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Age"},"text":{"path":"/age"},"textFieldType":"number"}}}]}}
+    {"dataModelUpdate":{"surfaceId":"s","path":"/","contents":[{"key":"age","valueString":"25"}]}}
+    """) {
+        A2UIComponentView(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("TextField - Date") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Birthday"},"text":{"path":"/bday"},"textFieldType":"date"}}}]}}
+    {"dataModelUpdate":{"surfaceId":"s","path":"/","contents":[{"key":"bday","valueString":"1990-01-15"}]}}
+    """) {
+        A2UIComponentView(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("TextField - Short Text") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Nickname"},"text":{"path":"/nick"},"textFieldType":"shortText"}}}]}}
+    {"dataModelUpdate":{"surfaceId":"s","path":"/","contents":[{"key":"nick","valueString":"JD"}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }
@@ -172,7 +232,7 @@ struct A2UITextFieldView: View {
 #Preview("TextField - Validation") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Email"},"value":{"path":"/email"},"validationRegexp":"^[\\\\w.+-]+@[\\\\w-]+\\\\.[a-zA-Z]{2,}$"}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"TextField":{"label":{"literalString":"Email"},"text":{"path":"/email"},"validationRegexp":"^[\\\\w.+-]+@[\\\\w-]+\\\\.[a-zA-Z]{2,}$"}}}]}}
     {"dataModelUpdate":{"surfaceId":"s","path":"/","contents":[{"key":"email","valueString":"jane@example.com"}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()

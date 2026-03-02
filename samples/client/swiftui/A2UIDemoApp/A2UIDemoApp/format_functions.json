@@ -1,13 +1,75 @@
 [
-  {"version":"v0.9","createSurface":{"surfaceId":"main"}},
-  {"version":"v0.9","updateComponents":{"surfaceId":"main","components":[
-    {"id":"root","component":"Column","children":["title","desc","date_field","divider","submit_btn"],"align":"stretch"},
-    {"id":"title","component":"Text","text":"Format Functions","variant":"h3"},
-    {"id":"desc","component":"Text","text":"Pick a date and tap Send. Compare the raw ISO string vs the formatted result.","variant":"caption"},
-    {"id":"date_field","component":"DateTimeInput","label":"Event Date","value":{"path":"/eventDate"},"enableDate":true,"enableTime":true},
-    {"id":"divider","component":"Divider"},
-    {"id":"submit_label","component":"Text","text":"Send"},
-    {"id":"submit_btn","component":"Button","child":"submit_label","variant":"primary","action":{"event":{"name":"sendEvent","context":{"rawDate":{"path":"/eventDate"},"formatted":{"call":"formatDate","args":{"value":{"path":"/eventDate"},"format":"E, MMM d yyyy 'at' h:mm a"},"returnType":"string"}}}}}
-  ]}},
-  {"version":"v0.9","updateDataModel":{"surfaceId":"main","path":"/","value":{"eventDate":"2026-06-15T14:30:00"}}}
+  {
+    "beginRendering": {
+      "surfaceId": "main",
+      "root": "root"
+    }
+  },
+  {
+    "surfaceUpdate": {
+      "surfaceId": "main",
+      "components": [
+        {
+          "id": "root",
+          "component": {
+            "Column": {
+              "children": { "explicitList": ["title", "desc", "date_field", "divider", "submit_btn"] },
+              "align": "stretch"
+            }
+          }
+        },
+        {
+          "id": "title",
+          "component": { "Text": { "text": { "literalString": "Format Functions" }, "variant": "h3" } }
+        },
+        {
+          "id": "desc",
+          "component": { "Text": { "text": { "literalString": "Pick a date and tap Send. The raw ISO string will appear in the resolved action." }, "variant": "caption" } }
+        },
+        {
+          "id": "date_field",
+          "component": {
+            "DateTimeInput": {
+              "label": { "literalString": "Event Date" },
+              "value": { "path": "/eventDate" },
+              "enableDate": true,
+              "enableTime": true
+            }
+          }
+        },
+        {
+          "id": "divider",
+          "component": { "Divider": {} }
+        },
+        {
+          "id": "submit_label",
+          "component": { "Text": { "text": { "literalString": "Send" } } }
+        },
+        {
+          "id": "submit_btn",
+          "component": {
+            "Button": {
+              "child": "submit_label",
+              "variant": "primary",
+              "action": {
+                "name": "sendEvent",
+                "context": [
+                  { "key": "rawDate", "value": { "path": "/eventDate" } }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "dataModelUpdate": {
+      "surfaceId": "main",
+      "path": "/",
+      "contents": [
+        { "key": "eventDate", "valueString": "2026-06-15T14:30:00" }
+      ]
+    }
+  }
 ]

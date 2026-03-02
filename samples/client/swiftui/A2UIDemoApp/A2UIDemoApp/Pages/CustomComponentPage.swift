@@ -4,7 +4,7 @@ import A2UI
 struct CustomComponentPage: View {
     private static let jsonl = """
     {"beginRendering":{"surfaceId":"main","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"main","components":[{"id":"root","component":{"Column":{"children":{"explicitList":["name","bio","slider"]}}}},{"id":"name","component":{"Text":{"text":{"path":"/name"},"variant":"h3"}}},{"id":"bio","component":{"Text":{"text":{"path":"/bio"}}}},{"id":"slider","component":{"Slider":{"label":{"literalString":"Rating"},"value":{"path":"/rating"},"min":0,"max":5}}}]}}
+    {"surfaceUpdate":{"surfaceId":"main","components":[{"id":"root","component":{"Column":{"children":{"explicitList":["name","bio","slider"]}}}},{"id":"name","component":{"Text":{"text":{"path":"/name"},"usageHint":"h3"}}},{"id":"bio","component":{"Text":{"text":{"path":"/bio"}}}},{"id":"slider","component":{"Slider":{"label":{"literalString":"Rating"},"value":{"path":"/rating"},"minValue":0,"maxValue":5}}}]}}
     {"dataModelUpdate":{"surfaceId":"main","path":"/","contents":[{"key":"name","valueString":"Alice Johnson"},{"key":"bio","valueString":"iOS developer & SwiftUI enthusiast."},{"key":"rating","valueNumber":3}]}}
     """
 

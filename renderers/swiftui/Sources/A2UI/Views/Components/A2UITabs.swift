@@ -14,6 +14,16 @@
 
 import SwiftUI
 
+/// # Tabs
+/// Spec v0.8 Tabs — adaptive tab container with `tabItems` (required).
+///
+/// Rendering strategy:
+/// - ≤5 tabs → system `Picker(.segmented)` (Settings App pattern)
+/// - >5 tabs → horizontal `ScrollView` + `Button(.bordered)` row (Music Browse pattern)
+///
+/// Platform differences:
+/// - watchOS: `.segmented` unavailable, falls back to `.wheel`.
+/// - tvOS / visionOS: not specifically handled yet — uses default picker behavior.
 struct A2UITabs: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -22,7 +32,7 @@ struct A2UITabs: View {
 
     var body: some View {
         if let props = try? node.payload.typedProperties(TabsProperties.self) {
-            let titles = props.tabs.map {
+            let titles = props.tabItems.map {
                 viewModel.resolveString($0.title, dataContextPath: dataContextPath)
             }
             TabsNodeView(
@@ -54,7 +64,7 @@ struct TabsNodeView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack {
             if titles.count <= 5 {
                 segmentedBar
             } else {
@@ -66,12 +76,12 @@ struct TabsNodeView: View {
                     node: childNodes[uiState.selectedIndex],
                     viewModel: viewModel
                 )
-                .padding(.top, 8)
             }
         }
     }
 
     /// ≤5 tabs: system segmented control (Settings App pattern).
+    /// watchOS does not support .segmented — falls back to default wheel picker.
     private var segmentedBar: some View {
         Picker("", selection: selection) {
             ForEach(titles.indices, id: \.self) { index in
@@ -80,7 +90,11 @@ struct TabsNodeView: View {
                     .tag(index)
             }
         }
+        #if os(watchOS)
+        .pickerStyle(.wheel)
+        #else
         .pickerStyle(.segmented)
+        #endif
         .tint(style.tabsStyle.selectedColor)
         .animation(.none, value: uiState.selectedIndex)
     }
@@ -89,7 +103,7 @@ struct TabsNodeView: View {
     private var scrollableBar: some View {
         let tabStyle = style.tabsStyle
         return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack {
                 ForEach(titles.indices, id: \.self) { index in
                     let isSelected = uiState.selectedIndex == index
                     Button {
@@ -104,7 +118,7 @@ struct TabsNodeView: View {
                         : (tabStyle.unselectedColor ?? .secondary))
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal)
         }
     }
 }
@@ -114,7 +128,25 @@ struct TabsNodeView: View {
 #Preview("Tabs - Two Tabs") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Tabs":{"tabs":[{"title":{"literalString":"View One"},"child":"t1"},{"title":{"literalString":"View Two"},"child":"t2"}]}}},{"id":"t1","component":{"Text":{"text":{"literalString":"First tab content"}}}},{"id":"t2","component":{"Text":{"text":{"literalString":"Second tab content"}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Tabs":{"tabItems":[{"title":{"literalString":"View One"},"child":"t1"},{"title":{"literalString":"View Two"},"child":"t2"}]}}},{"id":"t1","component":{"Text":{"text":{"literalString":"First tab content"}}}},{"id":"t2","component":{"Text":{"text":{"literalString":"Second tab content"}}}}]}}
+    """) {
+        A2UIComponentView(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("Tabs - Single Tab") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Tabs":{"tabItems":[{"title":{"literalString":"Only Tab"},"child":"t1"}]}}},{"id":"t1","component":{"Text":{"text":{"literalString":"Single tab content"}}}}]}}
+    """) {
+        A2UIComponentView(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("Tabs - Five Tabs (Segmented Boundary)") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Tabs":{"tabItems":[{"title":{"literalString":"One"},"child":"t1"},{"title":{"literalString":"Two"},"child":"t2"},{"title":{"literalString":"Three"},"child":"t3"},{"title":{"literalString":"Four"},"child":"t4"},{"title":{"literalString":"Five"},"child":"t5"}]}}},{"id":"t1","component":{"Text":{"text":{"literalString":"Tab 1 content"}}}},{"id":"t2","component":{"Text":{"text":{"literalString":"Tab 2 content"}}}},{"id":"t3","component":{"Text":{"text":{"literalString":"Tab 3 content"}}}},{"id":"t4","component":{"Text":{"text":{"literalString":"Tab 4 content"}}}},{"id":"t5","component":{"Text":{"text":{"literalString":"Tab 5 content"}}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }
@@ -123,7 +155,7 @@ struct TabsNodeView: View {
 #Preview("Tabs - Many Tabs (Scrollable)") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Tabs":{"tabs":[{"title":{"literalString":"Overview"},"child":"t1"},{"title":{"literalString":"Details"},"child":"t2"},{"title":{"literalString":"Reviews"},"child":"t3"},{"title":{"literalString":"Pricing"},"child":"t4"},{"title":{"literalString":"Support"},"child":"t5"},{"title":{"literalString":"FAQ"},"child":"t6"},{"title":{"literalString":"Updates"},"child":"t7"}]}}},{"id":"t1","component":{"Text":{"text":{"literalString":"Overview content"}}}},{"id":"t2","component":{"Text":{"text":{"literalString":"Details content"}}}},{"id":"t3","component":{"Text":{"text":{"literalString":"Reviews content"}}}},{"id":"t4","component":{"Text":{"text":{"literalString":"Pricing content"}}}},{"id":"t5","component":{"Text":{"text":{"literalString":"Support content"}}}},{"id":"t6","component":{"Text":{"text":{"literalString":"FAQ content"}}}},{"id":"t7","component":{"Text":{"text":{"literalString":"Updates content"}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Tabs":{"tabItems":[{"title":{"literalString":"Overview"},"child":"t1"},{"title":{"literalString":"Details"},"child":"t2"},{"title":{"literalString":"Reviews"},"child":"t3"},{"title":{"literalString":"Pricing"},"child":"t4"},{"title":{"literalString":"Support"},"child":"t5"},{"title":{"literalString":"FAQ"},"child":"t6"},{"title":{"literalString":"Updates"},"child":"t7"}]}}},{"id":"t1","component":{"Text":{"text":{"literalString":"Overview content"}}}},{"id":"t2","component":{"Text":{"text":{"literalString":"Details content"}}}},{"id":"t3","component":{"Text":{"text":{"literalString":"Reviews content"}}}},{"id":"t4","component":{"Text":{"text":{"literalString":"Pricing content"}}}},{"id":"t5","component":{"Text":{"text":{"literalString":"Support content"}}}},{"id":"t6","component":{"Text":{"text":{"literalString":"FAQ content"}}}},{"id":"t7","component":{"Text":{"text":{"literalString":"Updates content"}}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }

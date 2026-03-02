@@ -14,6 +14,27 @@
 
 import SwiftUI
 
+/// Spec v0.8 CheckBox — boolean toggle input.
+///
+/// Spec properties:
+/// - `label` (required): literalString or path — text next to the checkbox
+/// - `value` (required): literalBoolean or path — bound to data model
+///
+/// ## Rendering strategy: system `Toggle`, zero hardcoded values.
+///
+/// Maps directly to SwiftUI `Toggle` **without specifying `.toggleStyle()`**,
+/// letting the system use `.automatic` on every platform. This is intentional:
+/// - Apple is gradually unifying macOS toward iOS-style controls (e.g. Sequoia).
+/// - Not specifying a style means our UI automatically follows platform evolution.
+/// - If we forced `.switch` on macOS, we'd lose native checkbox in contexts where
+///   the system still prefers it (e.g. Form, Settings).
+/// - Users who need a specific style can override via `CheckBoxComponentStyle`.
+///
+/// ## Platform behavior (`.automatic`):
+/// - iOS / visionOS: switch
+/// - macOS: checkbox (evolving toward switch in newer OS versions)
+/// - watchOS: switch
+/// - tvOS: button-toggle
 struct A2UICheckBox: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -28,23 +49,13 @@ struct A2UICheckBox: View {
                 props.label, dataContextPath: dataContextPath
             )
             let cbStyle = style.checkBoxStyle
-            let _ = viewModel.resolveBoolean(props.value, dataContextPath: dataContextPath)
-            let msgs = a2uiChecksMessages(for: props.checks, viewModel: viewModel, dataContextPath: dataContextPath)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle(isOn: a2uiBoolBinding(for: props.value, viewModel: viewModel, dataContextPath: dataContextPath)) {
-                    Text(label)
-                        .font(cbStyle.labelFont)
-                        .foregroundStyle(cbStyle.labelColor ?? .primary)
-                }
-                .tint(cbStyle.tintColor)
-
-                ForEach(msgs, id: \.self) { msg in
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
+            Toggle(isOn: a2uiBoolBinding(for: props.value, viewModel: viewModel, dataContextPath: dataContextPath)) {
+                Text(label)
+                    .font(cbStyle.labelFont)
+                    .foregroundStyle(cbStyle.labelColor ?? .primary)
             }
+            .tint(cbStyle.tintColor)
         }
     }
 }

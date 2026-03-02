@@ -15,6 +15,11 @@
 #if canImport(AVFoundation) && !os(watchOS)
 import AVFoundation
 #endif
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 import Observation
 
 // MARK: - ComponentUIState Protocol & Concrete Types
@@ -47,10 +52,19 @@ public final class VideoUIState: ComponentUIState {
     #if canImport(AVKit) && !os(watchOS)
     public var player: AVPlayer?
     #endif
+    #if canImport(UIKit) && !os(watchOS)
+    /// Cached first-frame thumbnail. Fetched once asynchronously, persists
+    /// across LazyVStack recycling and tree rebuilds.
+    public var thumbnail: UIImage?
+    public var thumbnailLoaded = false
+    #elseif canImport(AppKit)
+    public var thumbnail: NSImage?
+    public var thumbnailLoaded = false
+    #endif
 }
 
 @Observable
-public final class ChoicePickerUIState: ComponentUIState {
+public final class MultipleChoiceUIState: ComponentUIState {
     public var filterText: String = ""
 }
 

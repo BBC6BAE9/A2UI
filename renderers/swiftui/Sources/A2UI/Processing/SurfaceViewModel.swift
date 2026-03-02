@@ -55,7 +55,6 @@ public final class SurfaceViewModel {
 
     /// Process a single server-to-client message (used by JSONL stream parsing).
     public func processMessage(_ message: ServerToClientMessage) throws {
-        // v0.8 messages
         if let br = message.beginRendering {
             handleBeginRendering(br)
         }
@@ -67,21 +66,6 @@ public final class SurfaceViewModel {
         }
         if message.deleteSurface != nil {
             handleDeleteSurface()
-        }
-        // v0.9 messages
-        if let cs = message.createSurface {
-            handleCreateSurface(cs)
-        }
-        if let uc = message.updateComponents {
-            if surfaceId == nil { surfaceId = uc.surfaceId }
-            if rootComponentId == nil { rootComponentId = "root" }
-            try handleSurfaceUpdate(SurfaceUpdateMessage(
-                surfaceId: uc.surfaceId,
-                components: uc.components
-            ))
-        }
-        if let udm = message.updateDataModel {
-            handleV09DataModelUpdate(udm)
         }
     }
 
@@ -96,8 +80,7 @@ public final class SurfaceViewModel {
     }
 
     private func handleSurfaceUpdate(_ message: SurfaceUpdateMessage) throws {
-        for var component in message.components {
-            component.component?.normalizeV08()
+        for component in message.components {
             components[component.id] = component
         }
         rebuildComponentTree()
@@ -121,29 +104,6 @@ public final class SurfaceViewModel {
         }
         // Data-bound values are read reactively from per-key ObservableValues.
         // Only rebuild when template-driven structure may have changed.
-        rebuildComponentTreeIfNeeded()
-    }
-
-    private func handleCreateSurface(_ message: CreateSurfaceMessage) {
-        surfaceId = message.surfaceId
-        if rootComponentId == nil {
-            rootComponentId = "root"
-        }
-        rebuildComponentTree()
-    }
-
-    /// Handle v0.9 data model update with raw JSON `value`.
-    private func handleV09DataModelUpdate(_ message: V09DataModelUpdateMessage) {
-        let path = message.path ?? "/"
-        if path == "/" {
-            if case .dictionary(let dict) = message.value {
-                for (key, value) in dict {
-                    dataStore.setData(path: key, value: value)
-                }
-            }
-        } else {
-            dataStore.setData(path: path, value: message.value)
-        }
         rebuildComponentTreeIfNeeded()
     }
 
@@ -196,19 +156,11 @@ public final class SurfaceViewModel {
 
     // MARK: - Data Binding (Path Resolution)
 
-    /// Resolve a `StringValue` to an actual string, looking up paths in the data model
-    /// or evaluating function calls.
+    /// Resolve a `StringValue` to an actual string, looking up paths in the data model.
     /// When both `path` and a literal are present, the literal seeds the data model as
     /// the initial value (only if the path has no existing value) and the result is
     /// always read from the data model so that user edits are preserved.
     public func resolveString(_ value: StringValue, dataContextPath: String = "/") -> String {
-        // Function call: evaluate and return result
-        if let fn = value.functionCall {
-            return CatalogFunctionEvaluator.evaluateAsString(
-                fn, viewModel: self, dataContextPath: dataContextPath
-            )
-        }
-
         if let path = value.path {
             let fullPath = resolvePath(path, context: dataContextPath)
             if let literal = value.literalValue, getDataByPath(fullPath) == nil {
@@ -234,12 +186,6 @@ public final class SurfaceViewModel {
     /// Resolve a `NumberValue` to an actual number.
     /// When both `path` and a literal are present, the literal seeds the data model once.
     public func resolveNumber(_ value: NumberValue, dataContextPath: String = "/") -> Double? {
-        if let fn = value.functionCall {
-            return CatalogFunctionEvaluator.evaluateAsNumber(
-                fn, viewModel: self, dataContextPath: dataContextPath
-            )
-        }
-
         if let path = value.path {
             let fullPath = resolvePath(path, context: dataContextPath)
             if let literal = value.literalValue, getDataByPath(fullPath) == nil {
@@ -262,12 +208,6 @@ public final class SurfaceViewModel {
     /// Resolve a `BooleanValue` to an actual boolean.
     /// When both `path` and a literal are present, the literal seeds the data model once.
     public func resolveBoolean(_ value: BooleanValue, dataContextPath: String = "/") -> Bool? {
-        if let fn = value.functionCall {
-            return CatalogFunctionEvaluator.evaluateAsBool(
-                fn, viewModel: self, dataContextPath: dataContextPath
-            )
-        }
-
         if let path = value.path {
             let fullPath = resolvePath(path, context: dataContextPath)
             if let literal = value.literalValue, getDataByPath(fullPath) == nil {
@@ -289,8 +229,7 @@ public final class SurfaceViewModel {
 
     // MARK: - Action Resolution
 
-    /// Resolve an action's context entries, converting paths to actual values
-    /// and evaluating function calls (e.g. `formatDate`).
+    /// Resolve an action's context entries, converting paths to actual values.
     public func resolveAction(
         _ action: Action,
         sourceComponentId: String,
@@ -298,9 +237,7 @@ public final class SurfaceViewModel {
     ) -> ResolvedAction {
         var resolved: [String: AnyCodable] = [:]
         for entry in action.context ?? [] {
-            if let fn = entry.value.functionCall {
-                resolved[entry.key] = evaluateContextFunction(fn, dataContextPath: dataContextPath)
-            } else if let path = entry.value.path {
+            if let path = entry.value.path {
                 let full = resolvePath(path, context: dataContextPath)
                 var value = getDataByPath(full)
                 // Fallback: inside a template context, treat absolute path as relative.
@@ -323,15 +260,6 @@ public final class SurfaceViewModel {
             sourceComponentId: sourceComponentId,
             context: resolved
         )
-    }
-
-    // MARK: - Context Function Evaluation
-
-    /// Evaluate a function call in action context (e.g. `formatDate`).
-    private func evaluateContextFunction(
-        _ fn: AnyCodable, dataContextPath: String
-    ) -> AnyCodable {
-        CatalogFunctionEvaluator.evaluate(fn, viewModel: self, dataContextPath: dataContextPath)
     }
 
     // MARK: - ValueMap → Dictionary Conversion
@@ -585,7 +513,7 @@ public final class SurfaceViewModel {
             return []
         case .Tabs:
             guard let props = try? payload.typedProperties(TabsProperties.self) else { return [] }
-            return props.tabs.compactMap { item in
+            return props.tabItems.compactMap { item in
                 buildNodeRecursive(
                     baseComponentId: item.child, visited: &visited,
                     dataContextPath: dataContextPath, idSuffix: idSuffix
@@ -595,13 +523,13 @@ public final class SurfaceViewModel {
             guard let props = try? payload.typedProperties(ModalProperties.self) else { return [] }
             var children: [ComponentNode] = []
             if let entry = buildNodeRecursive(
-                baseComponentId: props.trigger, visited: &visited,
+                baseComponentId: props.entryPointChild, visited: &visited,
                 dataContextPath: dataContextPath, idSuffix: idSuffix
             ) {
                 children.append(entry)
             }
             if let content = buildNodeRecursive(
-                baseComponentId: props.content, visited: &visited,
+                baseComponentId: props.contentChild, visited: &visited,
                 dataContextPath: dataContextPath, idSuffix: idSuffix
             ) {
                 children.append(content)
@@ -609,7 +537,7 @@ public final class SurfaceViewModel {
             return children
         default:
             // Leaf components (Text, Image, Icon, Divider, TextField, CheckBox,
-            // Slider, DateTimeInput, Video, AudioPlayer, ChoicePicker) have no children.
+            // Slider, DateTimeInput, Video, AudioPlayer, MultipleChoice) have no children.
             // Custom components: attempt to resolve children from a "children" property.
             if case .custom = type {
                 return resolveCustomChildren(
@@ -759,7 +687,7 @@ public final class SurfaceViewModel {
         case .Modal: return ModalUIState()
         case .AudioPlayer: return AudioPlayerUIState()
         case .Video: return VideoUIState()
-        case .ChoicePicker: return ChoicePickerUIState()
+        case .MultipleChoice: return MultipleChoiceUIState()
         case .custom: return nil
         default: return nil
         }
@@ -789,15 +717,12 @@ public final class SurfaceViewModel {
         return A2UIAccessibility(label: label, description: description)
     }
 
-    /// Decode a StringValue from an AnyCodable (handles string literal, path, and function call).
+    /// Decode a StringValue from an AnyCodable (handles string literal and path).
     private static func decodeStringValue(from raw: AnyCodable) -> StringValue? {
         switch raw {
         case .string(let s):
             return StringValue(literalString: s)
         case .dictionary(let dict):
-            if dict["call"] != nil {
-                return StringValue(functionCall: .dictionary(dict))
-            }
             if let path = dict["path"]?.stringValue {
                 return StringValue(path: path)
             }

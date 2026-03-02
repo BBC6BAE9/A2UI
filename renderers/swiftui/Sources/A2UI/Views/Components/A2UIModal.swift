@@ -14,6 +14,21 @@
 
 import SwiftUI
 
+/// # Modal
+/// Spec v0.8 Modal — entry-point-triggered sheet container.
+///
+/// Spec properties:
+/// - `entryPointChild` (required): component ID that opens the modal when its Button fires an action.
+/// - `contentChild` (required): component ID displayed inside the sheet.
+///
+/// Rendering strategy:
+/// - Entry point renders as-is; interaction is handled by the Button inside it (action handler intercept).
+/// - Content is presented via `.sheet` with `NavigationStack` + `ScrollView`.
+/// - Close button uses `.cancellationAction` placement (top-leading, standard iOS dismiss position).
+///
+/// Platform differences:
+/// - iOS / macOS / visionOS: `.presentationDetents([.medium, .large])` + `.presentationBackground(.regularMaterial)`.
+/// - watchOS / tvOS: plain `.sheet` (no detent or material APIs available).
 struct A2UIModal: View {
     let node: ComponentNode
     var viewModel: SurfaceViewModel
@@ -54,25 +69,17 @@ struct ModalNodeView: View {
             uiState.isPresented = true
             parentActionHandler?(action)
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            uiState.isPresented = true
-        }
         .sheet(isPresented: Binding(
             get: { uiState.isPresented },
             set: { uiState.isPresented = $0 }
         )) {
             NavigationStack {
                 ScrollView {
-                    A2UIComponentView(
-                        node: contentNode,
-                        viewModel: viewModel
-                    )
-                    .padding(modalStyle.contentPadding ?? 16)
+                    contentView(padding: modalStyle.contentPadding)
                 }
                 .toolbar {
-                    if modalStyle.showCloseButton {
-                        ToolbarItem(placement: .confirmationAction) {
+                    if modalStyle.showCloseButton ?? true {
+                        ToolbarItem(placement: .cancellationAction) {
                             Button {
                                 uiState.isPresented = false
                             } label: {
@@ -90,6 +97,19 @@ struct ModalNodeView: View {
             #endif
         }
     }
+
+    @ViewBuilder
+    private func contentView(padding: CGFloat?) -> some View {
+        let content = A2UIComponentView(
+            node: contentNode,
+            viewModel: viewModel
+        )
+        if let padding {
+            content.padding(padding)
+        } else {
+            content.padding()
+        }
+    }
 }
 
 // MARK: - Previews
@@ -97,7 +117,16 @@ struct ModalNodeView: View {
 #Preview("Modal") {
     if let (vm, root) = previewViewModel(jsonl: """
     {"beginRendering":{"surfaceId":"s","root":"root"}}
-    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Modal":{"trigger":"mbtn","content":"mcol"}}},{"id":"mbtn","component":{"Button":{"child":"mbtn-text","action":{"name":"open_modal"}}}},{"id":"mbtn-text","component":{"Text":{"text":{"literalString":"Open Modal"}}}},{"id":"mcol","component":{"Column":{"children":{"explicitList":["mh","mp"]}}}},{"id":"mh","component":{"Text":{"text":{"literalString":"Modal Title"},"variant":"h3"}}},{"id":"mp","component":{"Text":{"text":{"literalString":"This is a modal dialog."}}}}]}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Modal":{"entryPointChild":"mbtn","contentChild":"mcol"}}},{"id":"mbtn","component":{"Button":{"child":"mbtn-text","action":{"name":"open_modal"}}}},{"id":"mbtn-text","component":{"Text":{"text":{"literalString":"Open Modal"}}}},{"id":"mcol","component":{"Column":{"children":{"explicitList":["mh","mp"]}}}},{"id":"mh","component":{"Text":{"text":{"literalString":"Modal Title"},"usageHint":"h3"}}},{"id":"mp","component":{"Text":{"text":{"literalString":"This is a modal dialog."}}}}]}}
+    """) {
+        A2UIComponentView(node: root, viewModel: vm).padding()
+    }
+}
+
+#Preview("Modal - Long Content") {
+    if let (vm, root) = previewViewModel(jsonl: """
+    {"beginRendering":{"surfaceId":"s","root":"root"}}
+    {"surfaceUpdate":{"surfaceId":"s","components":[{"id":"root","component":{"Modal":{"entryPointChild":"mbtn","contentChild":"mcol"}}},{"id":"mbtn","component":{"Button":{"child":"mbtn-text","action":{"name":"open_modal"}}}},{"id":"mbtn-text","component":{"Text":{"text":{"literalString":"Open Long Modal"}}}},{"id":"mcol","component":{"Column":{"children":{"explicitList":["mh","mp1","mp2","mp3","mp4"]}}}},{"id":"mh","component":{"Text":{"text":{"literalString":"Scrollable Content"},"usageHint":"h3"}}},{"id":"mp1","component":{"Text":{"text":{"literalString":"Paragraph one with enough text to demonstrate scrolling behavior inside the modal sheet presentation."}}}},{"id":"mp2","component":{"Text":{"text":{"literalString":"Paragraph two continues with more content to fill the sheet and trigger scroll."}}}},{"id":"mp3","component":{"Text":{"text":{"literalString":"Paragraph three adds even more text so the content exceeds the medium detent height."}}}},{"id":"mp4","component":{"Text":{"text":{"literalString":"Paragraph four rounds out the long content preview."}}}}]}}
     """) {
         A2UIComponentView(node: root, viewModel: vm).padding()
     }

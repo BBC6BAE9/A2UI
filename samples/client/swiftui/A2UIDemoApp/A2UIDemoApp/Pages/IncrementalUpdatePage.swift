@@ -9,7 +9,7 @@ struct IncrementalUpdatePage: View {
     @State private var showingInspector = false
     
     private let stepDescriptions = [
-        "Step 1: createSurface",
+        "Step 1: beginRendering — create surface",
         "Step 2: ADD — title + Message A",
         "Step 3: ADD — Message B, C",
         "Step 4: REPLACE — edit Message A",
@@ -67,7 +67,7 @@ struct IncrementalUpdatePage: View {
 #if !os(visionOS) && !os(tvOS)
         .inspector(isPresented: $showingInspector) {
             ScrollView {
-                Text("Demonstrates incremental UI updates via the v0.9 updateComponents message. Each step sends a single message that adds, replaces, or removes components from the surface buffer without a full re-render.")
+                Text("Demonstrates incremental UI updates via the v0.8 surfaceUpdate message. Each step sends a single message that adds, replaces, or removes components from the surface buffer without a full re-render.")
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
