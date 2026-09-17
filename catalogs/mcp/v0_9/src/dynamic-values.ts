@@ -34,6 +34,12 @@ import type {DataBinding, DataContext, FunctionCall} from '@a2ui/web_core/v0_9';
  */
 export type DynamicExpression = DataBinding | FunctionCall;
 
+/**
+ * Cap on nested resolution, which stops a cycle between expressions that
+ * resolve to one another from overflowing the stack.
+ */
+const MAX_RESOLUTION_DEPTH = 100;
+
 /** Narrows to a non-null, non-array object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,27 +83,63 @@ export function isDynamicExpression(value: unknown): value is DynamicExpression 
  * Resolves every dynamic expression nested anywhere inside `value`.
  *
  * Literal records and arrays are rebuilt entry by entry so bindings inside them
- * are resolved while the surrounding literal structure is preserved. Values
- * that are not dynamic expressions are returned as-is.
+ * are resolved while the surrounding literal structure is preserved. What an
+ * expression resolves to is resolved again, so a binding that reads another
+ * expression out of the data model yields a plain value. Values that are not
+ * dynamic expressions are returned as-is, and a pending promise from an
+ * asynchronous function is passed through for the caller to settle.
  *
  * Like `DataContext.resolveDynamicValue`, this evaluates once and creates no
  * reactive subscriptions.
+ *
+ * @param depth Internal recursion counter. Resolution stops at
+ *     `MAX_RESOLUTION_DEPTH` and returns the value unresolved, which bounds a
+ *     cycle between expressions that resolve to one another.
  */
-export function resolveDynamicValueDeep<T = unknown>(value: unknown, context: DataContext): T {
+export function resolveDynamicValueDeep<T = unknown>(
+  value: unknown,
+  context: DataContext,
+  depth = 0,
+): T {
+  if (depth >= MAX_RESOLUTION_DEPTH) {
+    return value as T;
+  }
   if (!isRecord(value) && !Array.isArray(value)) {
     return value as T;
   }
+  if (typeof (value as {then?: unknown}).then === 'function') {
+    return value as T;
+  }
   if (Array.isArray(value)) {
-    return value.map(item => resolveDynamicValueDeep(item, context)) as unknown as T;
+    return value.map(item => resolveDynamicValueDeep(item, context, depth + 1)) as unknown as T;
   }
   if (isDataBinding(value)) {
-    return context.resolveDynamicValue(value);
+    const resolved = context.resolveDynamicValue(value);
+    // An unresolvable binding comes back unchanged; resolving it again would
+    // not terminate.
+    if (resolved === value) {
+      return resolved as unknown as T;
+    }
+    return resolveDynamicValueDeep(resolved, context, depth + 1);
   }
   if (isFunctionCall(value)) {
-    // `args` is optional in the spec but required by the resolver.
-    return context.resolveDynamicValue({...value, args: value.args ?? {}});
+    // `args` and `returnType` are optional in the spec but required by the
+    // resolver, so a partial call is completed rather than rejected.
+    const dynamicCall =
+      value.args !== undefined && value.returnType !== undefined
+        ? value
+        : {
+            call: value.call,
+            args: value.args ?? {},
+            returnType: value.returnType ?? 'any',
+          };
+    const resolved = context.resolveDynamicValue(dynamicCall);
+    if (resolved === value || resolved === dynamicCall) {
+      return resolved as unknown as T;
+    }
+    return resolveDynamicValueDeep(resolved, context, depth + 1);
   }
-  return resolveDynamicRecord(value, context) as T;
+  return resolveDynamicRecord(value, context, depth) as T;
 }
 
 /**
@@ -107,14 +149,17 @@ export function resolveDynamicValueDeep<T = unknown>(value: unknown, context: Da
  * The record itself is data, not a dynamic value, so entries are resolved
  * individually. This keeps a record whose keys happen to be named `path` or
  * `call` from being mistaken for a single binding or function call.
+ *
+ * @param depth Internal recursion counter, as on `resolveDynamicValueDeep`.
  */
 export function resolveDynamicRecord(
   record: Record<string, unknown>,
   context: DataContext,
+  depth = 0,
 ): Record<string, unknown> {
   const resolved: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    resolved[key] = resolveDynamicValueDeep(value, context);
+    resolved[key] = resolveDynamicValueDeep(value, context, depth + 1);
   }
   return resolved;
 }

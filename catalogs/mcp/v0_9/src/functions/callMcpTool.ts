@@ -23,8 +23,8 @@
  * ```ts
  * const catalogs: Catalog<any>[] = [];
  * const processor = new MessageProcessor(catalogs);
- * const callMcpTool = createCallMcpToolImplementation(getMcpClientForTool, processor);
- * catalogs.push(new Catalog(MCP_CATALOG_ID, [], [callMcpTool]));
+ * const functions = createMcpCatalogFunctions(getMcpClientForTool, processor);
+ * catalogs.push(new Catalog(MCP_CATALOG_ID, [], functions));
  * ```
  *
  * The host supplies one hook, `getMcpClientForTool`. This module calls the
@@ -107,7 +107,9 @@
  * {"content": [{"type": "text", "text": "Prep time is 15 minutes."}]}
  * ```
  *
- * No resource URI and no A2UI block, so nothing renders.
+ * No resource URI and no A2UI block, so nothing renders. The raw
+ * `CallToolResult` is still returned, which is what the data functions of this
+ * catalog read when a payload shapes tool output itself.
  *
  * ## Failures
  *
@@ -118,37 +120,67 @@
  */
 
 import {
+  A2uiExpressionError,
+  DynamicStringSchema,
+  DynamicValueSchema,
   createFunctionImplementation,
+  type A2uiMessage,
+  type CreateSurfaceMessage,
   type FunctionImplementation,
   type MessageProcessor,
-  A2uiExpressionError,
 } from '@a2ui/web_core/v0_9';
-import type {A2uiMessage, CreateSurfaceMessage} from '@a2ui/web_core/v0_9';
 import type {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {CallToolResultSchema} from '@modelcontextprotocol/sdk/types.js';
 import type {CallToolResult, ReadResourceResult} from '@modelcontextprotocol/sdk/types.js';
+import {z} from 'zod';
+
 import {resolveDynamicRecord} from '../dynamic-values.js';
-import {CallMcpToolApi} from './callMcpToolApi.js';
 
-export {CallMcpToolApi};
-
-/**
- * MIME type identifying an A2UI payload.
- */
+/** MIME type identifying an A2UI payload in an MCP resource. */
 export const A2UI_MIME_TYPE = 'application/a2ui+json';
 
-/**
- * The slice of the MCP `Client` this catalog uses.
- */
+/** Upper bound on decoded resources held per implementation. */
+const MAX_CACHED_RESOURCES = 100;
+
+/** The slice of the MCP `Client` this catalog uses. */
 export type McpToolClient = Pick<Client, 'request' | 'readResource' | 'listTools'>;
 
 /**
  * Resolves the connected MCP client that serves a named tool.
+ *
+ * Returning nothing is allowed and reported as a failed call, which lets a host
+ * hand over a client that connects later.
  */
-export type McpClientResolver = (toolName: string) => McpToolClient | Promise<McpToolClient>;
+export type McpClientResolver = (
+  toolName: string,
+) => McpToolClient | undefined | null | Promise<McpToolClient | undefined | null>;
+
+/**
+ * Function API definition for `callMcpTool`.
+ *
+ * Tools are addressed by name only. Resolving which connected MCP server hosts
+ * a given tool is the responsibility of the host application.
+ */
+export const CallMcpToolApi = {
+  name: 'callMcpTool' as const,
+  returnType: 'any' as const,
+  schema: z.object({
+    name: DynamicStringSchema.describe('The name of the MCP tool to execute.'),
+    arguments: z
+      .record(DynamicValueSchema)
+      .optional()
+      .default({})
+      .describe('The arguments to pass to the MCP tool.'),
+  }),
+  description: 'Invokes a tool on a connected Model Context Protocol (MCP) server.',
+};
 
 /**
  * Creates the `callMcpTool` function implementation.
+ *
+ * The returned function invokes the tool, renders any UI resource the tool or
+ * its result names, renders any inline `application/a2ui+json` block, and
+ * returns the raw `CallToolResult` for a payload to read.
  *
  * @param getMcpClientForTool Supplies the client to call a given tool on.
  * @param processor Receives the A2UI messages decoded from tool results.
@@ -157,7 +189,11 @@ export function createCallMcpToolImplementation(
   getMcpClientForTool: McpClientResolver,
   processor: MessageProcessor<any>,
 ): FunctionImplementation {
-  /** Messages already decoded, keyed by resource URI. A resource never changes. */
+  /**
+   * Messages already decoded, keyed by resource URI. A resource never changes,
+   * so a hit avoids a second `resources/read`. A host keeps one implementation
+   * for the life of the page, so the cache is bounded.
+   */
   const a2uiMessagesByResourceUri = new Map<string, A2uiMessage[]>();
 
   /** Declared URIs by tool name, discovered once per client. */
@@ -167,6 +203,12 @@ export function createCallMcpToolImplementation(
     let messages = a2uiMessagesByResourceUri.get(uri);
     if (!messages) {
       messages = parseA2uiMessages(await client.readResource({uri}), uri);
+      if (a2uiMessagesByResourceUri.size >= MAX_CACHED_RESOURCES) {
+        const oldestUri = a2uiMessagesByResourceUri.keys().next().value;
+        if (oldestUri !== undefined) {
+          a2uiMessagesByResourceUri.delete(oldestUri);
+        }
+      }
       a2uiMessagesByResourceUri.set(uri, messages);
     }
     return messages;
@@ -203,10 +245,14 @@ export function createCallMcpToolImplementation(
 
   return createFunctionImplementation(CallMcpToolApi, async (args, context) => {
     const toolName = context.resolveDynamicValue<string>(args.name);
-    const resolvedArguments = resolveDynamicRecord(args.arguments ?? {}, context);
 
     try {
+      const resolvedArguments = resolveDynamicRecord(args.arguments ?? {}, context);
+
       const client = await getMcpClientForTool(toolName);
+      if (!client) {
+        throw new Error(`MCP client for tool '${toolName}' could not be resolved.`);
+      }
       const result: CallToolResult = await client.request(
         {method: 'tools/call', params: {name: toolName, arguments: resolvedArguments}},
         CallToolResultSchema,
