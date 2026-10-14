@@ -15,21 +15,25 @@
 import A2UICore
 import SwiftUI
 
-/// Renders a single resolved A2UI engine node by looking up its view builder
-/// from the active component catalogs in the SwiftUI environment.
+/// Renders a component's view model by looking up its view builder from the active component
+/// catalogs in the SwiftUI environment.
+///
+/// The view observes the ``ComponentNode`` and re-renders when it publishes. Containers render
+/// each child with the child view model they hold, so a component's view keeps observing the same
+/// view model across updates.
 public struct ComponentNodeView: View {
   @Environment(\.a2uiCatalogs) private var catalogs
   @Environment(\.a2uiDefaultCatalogID) private var defaultCatalogID
 
-  public let node: Node
+  @ObservedObject private var componentNode: ComponentNode
 
-  public init(node: Node) {
-    self.node = node
+  public init(componentNode: ComponentNode) {
+    self.componentNode = componentNode
   }
 
   public var body: some View {
     if let renderedView = Surface.render(
-      node: node, using: catalogs, defaultCatalogID: defaultCatalogID)
+      componentNode: componentNode, using: catalogs, defaultCatalogID: defaultCatalogID)
     {
       renderedView
     } else {
@@ -38,7 +42,7 @@ public struct ComponentNodeView: View {
   }
 
   private var fallbackView: some View {
-    print("[A2UI] Component view builder not found for type: \(node.type)")
+    print("[A2UI] Component view builder not found for type: \(componentNode.node.type)")
     return EmptyView()
   }
 }
