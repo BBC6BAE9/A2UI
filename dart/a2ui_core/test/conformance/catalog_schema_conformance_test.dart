@@ -54,10 +54,6 @@ const String _noV08 = 'Targets v0.8, which a2ui_core does not implement.';
 
 /// Cases whose expected outcome Dart does not produce, with the reason.
 const Map<String, String> _knownDivergences = {
-  'test_v10_uax31_invalid_argument_name':
-      "Catalog.fromJson reads a map-form function's 'parameters' as a JSON "
-          'schema, so it checks the names under its properties; the case '
-          'writes the argument names directly under parameters.',
   'test_v10_catalog_from_json_uax31_validation':
       "Catalog.fromJson rejects function names starting with '@', which are "
           'reserved for protocol system functions such as @index.',
@@ -183,7 +179,6 @@ void _runFromJsonCase(Map<String, Object?> testCase) {
       expected.containsKey('invalidComponents')) {
     final validator = PayloadValidator<ComponentApi, FunctionApi>(
       catalog: catalog,
-      protocolVersion: version,
     );
     for (final Object? component in _list(expected['validComponents'])) {
       validator.validateComponent((component! as Map).cast<String, Object?>());

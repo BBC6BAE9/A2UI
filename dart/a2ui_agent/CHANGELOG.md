@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Align `MessageProcessor.model` and `PayloadValidator` usage with `a2ui_core`.
 - The Direct JSON prompt builds its schema from `Catalog.validationSchema`
   instead of the deprecated `catalogSchema`.
 - Payload validation builds its `MessageProcessor` with `defaultVersion`.

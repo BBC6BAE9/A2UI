@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:json_schema_builder/json_schema_builder.dart';
 
 import '../primitives/errors.dart';
+import '../primitives/protocol_version.dart';
 import '../primitives/reactivity.dart';
 import '../validation/component_graph.dart' show maxFunctionCallArgs;
 import '../validation/schema_resolution.dart';
@@ -55,24 +56,18 @@ typedef MissingDataReporter = void Function(String path);
 /// an [A2uiExpressionError] instead of exhausting the call stack.
 const int maxDynamicValueDepth = 1000;
 
-/// A live subscription to a dynamic value, returned by
-/// [DataContext.subscribeDynamicValue].
-abstract interface class DataSubscription {
-  /// The latest resolved value.
-  Object? get value;
-
-  /// Stops change notifications. Idempotent.
-  void unsubscribe();
-}
-
-class _SignalDataSubscription implements DataSubscription {
+class _SignalDataSubscription<T extends Object?>
+    implements DataSubscription<T> {
   final ReadonlySignal<Object?> _signal;
   void Function()? _dispose;
 
   _SignalDataSubscription(this._signal);
 
   @override
-  Object? get value => _signal.peek();
+  T? get value {
+    final Object? val = _signal.peek();
+    return val as T?;
+  }
 
   @override
   void unsubscribe() {
@@ -82,7 +77,7 @@ class _SignalDataSubscription implements DataSubscription {
   }
 }
 
-/// A dynamic value as [DataContext.resolveListenableWithPending] reports it:
+/// A dynamic value as [DataContext.resolveSignalWithPending] reports it:
 /// its current `value`, and whether that value is a placeholder for an
 /// agent call whose response has not arrived (`pending`).
 typedef DynamicValueState = ({Object? value, bool pending});
@@ -108,7 +103,7 @@ class DataContext {
   final AgentFunctionCaller? _callAgentFunction;
   final _AgentCallCache _agentCalls;
   final String path;
-  final String? protocolVersion;
+  final A2uiProtocolVersion? protocolVersion;
 
   /// The context this one was derived from, or null for a root context.
   final DataContext? parent;
@@ -206,12 +201,13 @@ class DataContext {
   static final RegExp _digits = RegExp(r'^\d+$');
 
   /// Whether this context targets protocol v1.0 or any later version.
-  bool get atLeastV10 {
-    final String? v = protocolVersion;
-    if (v == null) return false;
-    final String core = v.startsWith('v') ? v.substring(1) : v;
-    return (int.tryParse(core.split('.').first) ?? 0) >= 1;
-  }
+  bool get atLeastV10 =>
+      protocolVersion != null &&
+      protocolVersion!.isAtLeast(A2uiProtocolVersion.v1_0);
+
+  /// Alias for [atLeastV10] indicating whether this context uses `@`-prefixed
+  /// directives (`@path`, `@call`, `@index`, and `@@` escaping).
+  bool get usesDirectives => atLeastV10;
 
   /// Returns a data-binding map for [path] using the key required by the
   /// active protocol version (`{'@path': path}` in v1.0+, `{'path': path}` in
@@ -335,9 +331,9 @@ class DataContext {
   /// An array or map payload resolves per element, since a dynamic value may
   /// be nested at any depth inside literal structure. A payload holding no
   /// bindings or calls is returned as-is rather than copied.
-  Object? resolveSync(Object? value) => _resolveSync(value, 0);
+  Object? resolveDynamicValue(Object? value) => _resolveDynamicValue(value, 0);
 
-  Object? _resolveSync(Object? value, int depth) {
+  Object? _resolveDynamicValue(Object? value, int depth) {
     if (depth > maxDynamicValueDepth) {
       _reportDepthExceeded();
       return null;
@@ -355,7 +351,7 @@ class DataContext {
         final call = FunctionCall.fromJson(_asStringKeyedMap(value));
         final args = <String, dynamic>{};
         for (final MapEntry<String, dynamic> entry in call.args.entries) {
-          args[entry.key] = _resolveSync(entry.value, depth + 1);
+          args[entry.key] = _resolveDynamicValue(entry.value, depth + 1);
         }
         final Object? result = _evaluateFunction(call, args);
         if (result is ReadonlySignal) {
@@ -372,7 +368,7 @@ class DataContext {
           final String keyStr = entry.key;
           final String unescapedKey =
               keyStr.startsWith('@@') ? keyStr.substring(1) : keyStr;
-          result[unescapedKey] = _resolveSync(entry.value, depth + 1);
+          result[unescapedKey] = _resolveDynamicValue(entry.value, depth + 1);
         }
         return result;
       }
@@ -385,7 +381,7 @@ class DataContext {
         final call = FunctionCall.fromJson(_asStringKeyedMap(value as Map));
         final args = <String, dynamic>{};
         for (final MapEntry<String, dynamic> entry in call.args.entries) {
-          args[entry.key] = _resolveSync(entry.value, depth + 1);
+          args[entry.key] = _resolveDynamicValue(entry.value, depth + 1);
         }
         final Object? result = _evaluateFunction(call, args);
         if (result is ReadonlySignal) {
@@ -398,7 +394,7 @@ class DataContext {
         if (!_containsDynamicValue(value, depth)) return value;
         final result = <String, dynamic>{};
         for (final MapEntry<String, dynamic> entry in stringMap.entries) {
-          result[entry.key] = _resolveSync(entry.value, depth + 1);
+          result[entry.key] = _resolveDynamicValue(entry.value, depth + 1);
         }
         return result;
       }
@@ -407,7 +403,7 @@ class DataContext {
       if (!_containsDynamicValue(value, depth)) {
         return value;
       }
-      return [for (final item in value) _resolveSync(item, depth + 1)];
+      return [for (final item in value) _resolveDynamicValue(item, depth + 1)];
     }
     return value;
   }
@@ -438,11 +434,11 @@ class DataContext {
 
   /// Returns a reactive signal that re-evaluates a dynamic value
   /// whenever its underlying data dependencies change. Array and map
-  /// payloads resolve per entry, mirroring [resolveSync].
-  ReadonlySignal<Object?> resolveListenable(Object? value) =>
-      _resolveListenable(value, 0);
+  /// payloads resolve per entry, mirroring [resolveDynamicValue].
+  ReadonlySignal<Object?> resolveSignal(Object? value) =>
+      _resolveSignal(value, 0);
 
-  ReadonlySignal<Object?> _resolveListenable(Object? value, int depth) {
+  ReadonlySignal<Object?> _resolveSignal(Object? value, int depth) {
     if (depth > maxDynamicValueDepth) {
       _reportDepthExceeded();
       return signal(null);
@@ -460,7 +456,7 @@ class DataContext {
         final call = FunctionCall.fromJson(_asStringKeyedMap(value));
         final Map<String, ReadonlySignal<Object?>> argSignals = {
           for (final MapEntry<String, dynamic> entry in call.args.entries)
-            entry.key: _resolveListenable(entry.value, depth + 1),
+            entry.key: _resolveSignal(entry.value, depth + 1),
         };
         return computed(() {
           final args = <String, dynamic>{
@@ -484,7 +480,7 @@ class DataContext {
         final entries = <String, ReadonlySignal<Object?>>{
           for (final MapEntry<String, dynamic> e in stringMap.entries)
             (e.key.startsWith('@@') ? e.key.substring(1) : e.key):
-                _resolveListenable(e.value, depth + 1),
+                _resolveSignal(e.value, depth + 1),
         };
         return computed(() => {
               for (final e in entries.entries) e.key: e.value.value,
@@ -499,7 +495,7 @@ class DataContext {
         final call = FunctionCall.fromJson(_asStringKeyedMap(value as Map));
         final Map<String, ReadonlySignal<Object?>> argSignals = {
           for (final MapEntry<String, dynamic> entry in call.args.entries)
-            entry.key: _resolveListenable(entry.value, depth + 1),
+            entry.key: _resolveSignal(entry.value, depth + 1),
         };
         return computed(() {
           final args = <String, dynamic>{
@@ -521,7 +517,7 @@ class DataContext {
         }
         final Map<String, ReadonlySignal<Object?>> entries = {
           for (final MapEntry<String, dynamic> entry in stringMap.entries)
-            entry.key: _resolveListenable(entry.value, depth + 1),
+            entry.key: _resolveSignal(entry.value, depth + 1),
         };
         return computed(
           () => {
@@ -537,7 +533,7 @@ class DataContext {
         return signal(value);
       }
       final List<ReadonlySignal<Object?>> items = [
-        for (final item in value) _resolveListenable(item, depth + 1),
+        for (final item in value) _resolveSignal(item, depth + 1),
       ];
       return computed(() => [for (final item in items) item.value]);
     }
@@ -586,7 +582,7 @@ class DataContext {
   ///
   /// A call that cannot be resolved locally on a v1.0 context with an agent
   /// caller is sent to the agent; its value is null until the response
-  /// arrives, and the signal [resolveListenable] builds updates then.
+  /// arrives, and the signal [resolveSignal] builds updates then.
   ///
   /// The reported error carries code `CATALOG_ERROR` when the call's catalog
   /// can't be resolved (the invoker threw [A2uiCatalogError]): the expression
@@ -672,19 +668,19 @@ class DataContext {
     report(absolutePath);
   }
 
-  /// Resolves [value] like [resolveListenable] and calls [onChange] with each
+  /// Resolves [value] like [resolveSignal] and calls [onChange] with each
   /// later value until [DataSubscription.unsubscribe]. The current value is
   /// available from [DataSubscription.value]; [onChange] is not called for
   /// it.
-  DataSubscription subscribeDynamicValue(
+  DataSubscription<T> subscribeDynamicValue<T extends Object?>(
     Object? value,
-    void Function(Object? value) onChange,
+    void Function(T? value) onChange,
   ) {
-    final ReadonlySignal<Object?> source = resolveListenable(value);
-    final subscription = _SignalDataSubscription(source);
+    final ReadonlySignal<Object?> source = resolveSignal(value);
+    final subscription = _SignalDataSubscription<T>(source);
     var initial = true;
     subscription._dispose = source.subscribe((next) {
-      if (!initial) onChange(next);
+      if (!initial) onChange(next as T?);
     });
     initial = false;
     return subscription;
@@ -699,7 +695,9 @@ class DataContext {
   /// and whatever the invoker throws otherwise.
   Object? _invokeLocally(FunctionCall call, Map<String, dynamic> args) {
     final String name = call.call;
-    if (atLeastV10 && name == _indexFunctionName) return _evaluateIndex(args);
+    if (atLeastV10 && name == _indexFunctionName) {
+      return _evaluateIndex(args);
+    }
     if (args.length > maxFunctionCallArgs) {
       throw A2uiExpressionError(
         "Function call '$name' exceeds maximum allowed arguments count "
@@ -839,8 +837,8 @@ class DataContext {
   /// Walks [value] for function calls, resolves each call's arguments when a
   /// pending call for that function is in flight, and looks the call up among
   /// the agent calls this context has sent. A call that would resolve locally
-  /// is never pending. Lets a consumer that treats a null from [resolveSync]
-  /// as "not yet known" tell it from a null result.
+  /// is never pending. Lets a consumer that treats a null from
+  /// [resolveDynamicValue] as "not yet known" tell it from a null result.
   bool isPendingAgentCall(Object? value) {
     if (_agentCalls.entries.isEmpty) return false;
     if (value is List) return value.any(isPendingAgentCall);
@@ -868,7 +866,7 @@ class DataContext {
       );
       final args = <String, dynamic>{
         for (final MapEntry<String, dynamic> entry in call.args.entries)
-          entry.key: peek.resolveSync(entry.value),
+          entry.key: peek.resolveDynamicValue(entry.value),
       };
       final _AgentCall? entry = _agentCalls.entries[_agentCallKey(call, args)];
       return entry != null && entry.pending;
@@ -876,13 +874,13 @@ class DataContext {
     return value.values.any(isPendingAgentCall);
   }
 
-  /// [resolveListenable], paired with whether the value is a placeholder for
+  /// [resolveSignal], paired with whether the value is a placeholder for
   /// a pending agent call. The signal updates when the value changes and
   /// when a pending call settles, even if its value stays null.
-  ReadonlySignal<DynamicValueState> resolveListenableWithPending(
+  ReadonlySignal<DynamicValueState> resolveSignalWithPending(
     Object? value,
   ) {
-    final ReadonlySignal<Object?> resolved = resolveListenable(value);
+    final ReadonlySignal<Object?> resolved = resolveSignal(value);
     return computed(() {
       // Read so a settled call re-runs this even when the value is unchanged.
       _agentCalls.version.value;
@@ -894,18 +892,18 @@ class DataContext {
   /// action does: locally when a catalog implements it, otherwise through the
   /// agent on a v1.0 context, completing with the result.
   ///
-  /// Arguments are resolved with [resolveSync]. A function that throws
-  /// follows the reporter policy of [resolveSync] and completes with null. A
-  /// function that returns a failing `Future`, and an agent call that fails
-  /// (an `A2uiRpcError`), fail the returned future instead. An agent call is
-  /// always sent, never shared with a dynamic value's pending call.
+  /// Arguments are resolved with [resolveDynamicValue]. A function that throws
+  /// follows the reporter policy of [resolveDynamicValue] and completes with
+  /// null. A function that returns a failing `Future`, and an agent call that
+  /// fails (an `A2uiRpcError`), fail the returned future instead. An agent
+  /// call is always sent, never shared with a dynamic value's pending call.
   Future<Object?> evaluateFunctionCall(
     Map<String, Object?> functionCall,
   ) async {
     final call = FunctionCall.fromJson(_asStringKeyedMap(functionCall));
     final args = <String, dynamic>{
       for (final MapEntry<String, dynamic> entry in call.args.entries)
-        entry.key: resolveSync(entry.value),
+        entry.key: resolveDynamicValue(entry.value),
     };
     Object? result;
     AgentFunctionCaller? agentCaller;
@@ -1017,13 +1015,13 @@ class DataContext {
     if (ctx is Map) {
       result['context'] = <String, Object?>{
         for (final MapEntry<Object?, Object?> e in ctx.entries)
-          e.key.toString(): resolveSync(e.value),
+          e.key.toString(): resolveDynamicValue(e.value),
       };
     } else {
       result['context'] = <String, Object?>{};
     }
     if (result.containsKey('userMessage')) {
-      result['userMessage'] = resolveSync(result['userMessage']);
+      result['userMessage'] = resolveDynamicValue(result['userMessage']);
     }
     return result;
   }
@@ -1112,7 +1110,9 @@ class ComponentContext {
               surface.resolveCatalog(null).invoke(name, args, context),
           basePath ?? '/',
           onError: onError ?? _surfaceReporter(surface),
-          protocolVersion: surface.protocolVersion,
+          protocolVersion: surface.protocolVersion == null
+              ? null
+              : A2uiProtocolVersion.tryParseSemVer(surface.protocolVersion!),
           invokerForCatalog: (catalogId) =>
               surface.resolveCatalog(catalogId).invoke,
           isUserActivated: false,
@@ -1131,25 +1131,25 @@ class ComponentContext {
   static ExpressionErrorReporter _surfaceReporter(SurfaceModel surface) =>
       (error) => surface.dispatchError(clientErrorFor(surface, error));
 
-  /// Builds the [A2uiClientError] for [error] on [surface].
+  /// Builds the [A2uiRendererError] for [error] on [surface].
   ///
   /// When [error]'s cause is an [A2uiRpcError], the error code is
   /// `EXECUTION_ERROR` and `functionCallId` is set (omitting `surfaceId` when
   /// `functionCallId` is non-null to satisfy the v1.0 wire `oneOf` rule).
-  static A2uiClientError clientErrorFor(
+  static A2uiRendererError clientErrorFor(
     SurfaceModel surface,
     A2uiExpressionError error,
   ) {
     final Object? cause = error.cause;
     return cause is A2uiRpcError
-        ? A2uiClientError(
+        ? A2uiRendererError(
             code: RpcErrorCode.executionError.wireValue,
             surfaceId: cause.functionCallId == null ? surface.id : null,
             functionCallId: cause.functionCallId,
             message: error.message,
             details: error.details,
           )
-        : A2uiClientError(
+        : A2uiRendererError(
             code: error.code,
             surfaceId: surface.id,
             message: error.message,

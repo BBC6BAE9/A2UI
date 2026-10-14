@@ -376,7 +376,7 @@ class RpcHandler {
     try {
       resolvedArgs = {
         for (final MapEntry<String, dynamic> entry in call.args.entries)
-          entry.key: dataContext.resolveSync(entry.value),
+          entry.key: dataContext.resolveDynamicValue(entry.value),
       };
     } catch (error) {
       final String errorMessage =
@@ -454,7 +454,11 @@ class RpcHandler {
         (name, args, context) =>
             surface.resolveCatalog(null).invoke(name, args, context),
         '/',
-        protocolVersion: surface.protocolVersion,
+        protocolVersion: surface.protocolVersion == null
+            ? null
+            : A2uiProtocolVersion.tryParseSemVer(
+                surface.protocolVersion!,
+              ),
         invokerForCatalog: (catalogId) =>
             surface.resolveCatalog(catalogId).invoke,
         isUserActivated: execution.isUserActivated,
@@ -465,7 +469,8 @@ class RpcHandler {
       DataModel(),
       catalog.invoke,
       '/',
-      protocolVersion: version,
+      protocolVersion: A2uiProtocolVersion.tryParseSemVer(version) ??
+          A2uiProtocolVersion.v1_0,
       invokerForCatalog: (catalogId) {
         if (catalogId == catalog.id) return catalog.invoke;
         throw A2uiCatalogResolutionError(

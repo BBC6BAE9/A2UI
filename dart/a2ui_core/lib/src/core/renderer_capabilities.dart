@@ -59,7 +59,6 @@ class A2uiVersionCapabilities {
     if (rawIds is! List) {
       throw A2uiValidationError(
         "Renderer capabilities must declare a 'supportedCatalogIds' array.",
-        details: json,
       );
     }
     final Object? rawInline = json['inlineCatalogs'];
@@ -76,7 +75,6 @@ class A2uiVersionCapabilities {
           else
             throw A2uiValidationError(
               "'supportedCatalogIds' must contain only strings.",
-              details: json,
             ),
       ],
       inlineCatalogs: [
@@ -175,7 +173,6 @@ class A2uiRendererCapabilities {
       if (value is! Map) {
         throw A2uiValidationError(
           "Renderer capabilities entry '${entry.key}' must be an object.",
-          details: json,
         );
       }
       versions[version] = A2uiVersionCapabilities.fromJson(
@@ -188,7 +185,6 @@ class A2uiRendererCapabilities {
         'Renderer capabilities must declare an entry for a supported '
         'version; this SDK supports only '
         '${A2uiProtocolVersion.supportedVersions}.',
-        details: json,
       );
     }
 

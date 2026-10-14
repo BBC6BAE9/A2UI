@@ -539,13 +539,14 @@ class Catalog<C extends ComponentApi, F extends FunctionApi> {
       rawId,
     );
     final A2uiProtocolVersion? version = declaredVersion ?? protocolVersion;
-    final bool v1 = version?.isAtLeast(A2uiProtocolVersion.v1_0) ?? false;
 
     // Expanding the local references checks that each names something, and
     // lets the identifier check see names reached through them. The
     // expanded copy is not kept: the model holds the schemas as written.
     final inlined = inlineLocalRefs(json, json)! as Map<String, Object?>;
-    if (v1) _checkIdentifiers(inlined, rawId);
+    if (version?.isAtLeast(A2uiProtocolVersion.v1_0) ?? false) {
+      _checkIdentifiers(inlined, rawId);
+    }
 
     final Object? rawDefs = json[r'$defs'];
     if (rawDefs != null && rawDefs is! Map) {
@@ -707,6 +708,24 @@ class Catalog<C extends ComponentApi, F extends FunctionApi> {
       }
     }
 
+    // The names of a function's parameters, whether declared under a JSON
+    // Schema's `properties`/`allOf` or directly as a shorthand parameter map.
+    Iterable<String> parameterNames(Object? schema) sync* {
+      if (schema is! Map) return;
+      if (schema.containsKey('properties') || schema.containsKey('allOf')) {
+        yield* propertyNames(schema);
+        return;
+      }
+      if (schema['type'] is! String &&
+          !schema.containsKey(r'$ref') &&
+          !schema.containsKey('oneOf') &&
+          !schema.containsKey('anyOf') &&
+          !schema.containsKey('not') &&
+          schema.values.every((v) => v is Map || v is bool)) {
+        yield* schema.keys.whereType<String>();
+      }
+    }
+
     if (json['components'] case final Map<Object?, Object?> components) {
       for (final MapEntry<Object?, Object?> entry in components.entries) {
         final name = entry.key! as String;
@@ -738,7 +757,7 @@ class Catalog<C extends ComponentApi, F extends FunctionApi> {
     };
     for (final (String name, Object? args) in definitions) {
       check(name, "function identifier '$name'", allowLeadingAt: true);
-      for (final String arg in propertyNames(args)) {
+      for (final String arg in parameterNames(args)) {
         check(
           arg,
           "argument identifier '$arg' in function '$name'",
@@ -984,14 +1003,24 @@ class Catalog<C extends ComponentApi, F extends FunctionApi> {
 
   /// The argument schema [raw], a part of a frozen definition, or an empty
   /// schema when the definition gives none.
-  static Schema _argumentSchema(Object? raw) => Schema.fromMap(
-        _markRead(
-          raw is Map<String, Object?>
-              ? raw
-              : _frozenCopy(_asSchemaMap(raw ?? const <String, Object?>{}))!
-                  as Map<String, Object?>,
-        ),
-      );
+  static Schema _argumentSchema(Object? raw) {
+    final Map<String, Object?> map = raw is Map<String, Object?>
+        ? raw
+        : _frozenCopy(_asSchemaMap(raw ?? const <String, Object?>{}))!
+            as Map<String, Object?>;
+    final normalized = map.isNotEmpty &&
+            !map.containsKey('properties') &&
+            map['type'] is! String &&
+            !map.containsKey(r'$ref') &&
+            !map.containsKey('allOf') &&
+            !map.containsKey('oneOf') &&
+            !map.containsKey('anyOf') &&
+            !map.containsKey('not') &&
+            map.values.every((v) => v is Map || v is bool)
+        ? <String, Object?>{'type': 'object', 'properties': map}
+        : map;
+    return Schema.fromMap(_markRead(normalized));
+  }
 
   /// Reads a function's `allowedCallers`, or null when it declares none.
   static AllowedCallers? _parseAllowedCallers(
@@ -1572,7 +1601,6 @@ class Catalog<C extends ComponentApi, F extends FunctionApi> {
       _deepCopyValue(_document)! as Map<String, Object?>;
 
   Map<String, Object?> _buildDocument() {
-    final bool v1 = _isAtLeastV1;
     final _DocumentLayout layout = _layout;
     final bool themeInDefs = layout.themeInDefs ?? true;
     final Object? theme =
@@ -1585,7 +1613,7 @@ class Catalog<C extends ComponentApi, F extends FunctionApi> {
         'anyComponent': _componentUnionOf(components.keys),
       if (definitions.containsKey('anyFunction'))
         'anyFunction': _deepCopyValue(definitions['anyFunction']),
-      if (layout.writesFunctionUnion ?? (functions.isNotEmpty || v1))
+      if (layout.writesFunctionUnion ?? (functions.isNotEmpty || _isAtLeastV1))
         'anyFunction': _functionUnionOf(functions.keys),
     };
 

@@ -35,7 +35,6 @@ void validatePayloads(
           "Surface '${message.surfaceId}' names catalog "
           "'${message.catalogId}', which is not active. Active catalogs: "
           '${catalogs.map((c) => c.id).join(', ')}.',
-          details: message.toJson(),
         );
       }
     }
@@ -59,14 +58,14 @@ void validatePayloads(
       // complete once the whole payload is applied.
       for (final CreateSurfaceMessage message
           in payload.whereType<CreateSurfaceMessage>()) {
-        renderer.groupModel
+        renderer.model
             .getSurface(message.surfaceId)
             ?.componentsModel
             .validateTopology(ValidationConfig.strict);
       }
     }
   } finally {
-    renderer.groupModel.dispose();
+    renderer.model.dispose();
   }
 }
 
