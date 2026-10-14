@@ -47,7 +47,8 @@ public final class ComponentNode: ObservableObject, Identifiable {
   /// Updates the component and its children from a newly resolved node.
   ///
   /// A child keeps its view model while its instance ID stays the same, and that view model is
-  /// updated in turn. A property is only reassigned, and so only publishes, when it changes.
+  /// updated in turn. `node` is only reassigned, and so only publishes, when the component's own
+  /// properties change, and `children` only when the child view models change.
   func update(_ newNode: Node) {
     let newChildren = newNode.allChildNodes.map { child in
       guard let reused = childrenByID[child.id] else {
@@ -60,9 +61,39 @@ public final class ComponentNode: ObservableObject, Identifiable {
       children = newChildren
       childrenByID = Self.index(newChildren)
     }
-    if node != newNode {
+    if !Self.hasSameOwnProperties(node, newNode) {
       node = newNode
     }
+  }
+
+  /// Compares two nodes, treating child nodes as equal when their instance IDs and types match.
+  ///
+  /// A change inside a child is published by the child's own view model, so it doesn't make
+  /// its parent publish.
+  private static func hasSameOwnProperties(_ lhs: Node, _ rhs: Node) -> Bool {
+    lhs.id == rhs.id && lhs.type == rhs.type && lhs.catalogID == rhs.catalogID
+      && isSameOwnValue(ResolvedDictionary(lhs.properties), ResolvedDictionary(rhs.properties))
+  }
+
+  private static func isSameOwnValue(_ lhs: any Resolved, _ rhs: any Resolved) -> Bool {
+    if let left = lhs as? Node, let right = rhs as? Node {
+      return left.id == right.id && left.type == right.type
+    }
+    // An empty array of another element type also casts to `[Node]`.
+    if let left = lhs as? [Node], let right = rhs as? [Node], !(left.isEmpty && right.isEmpty) {
+      return left.map(\.id) == right.map(\.id) && left.map(\.type) == right.map(\.type)
+    }
+    if let left = lhs as? ResolvedDictionary, let right = rhs as? ResolvedDictionary {
+      return left.storage.count == right.storage.count
+        && left.storage.allSatisfy { key, value in
+          right.storage[key].map { isSameOwnValue(value, $0) } ?? false
+        }
+    }
+    if let left = lhs as? ResolvedArray, let right = rhs as? ResolvedArray {
+      return left.elements.count == right.elements.count
+        && zip(left.elements, right.elements).allSatisfy { isSameOwnValue($0, $1) }
+    }
+    return lhs.isEqual(to: rhs)
   }
 
   /// Returns the view model `parent` holds for a child `node`, or a new view model when there is
