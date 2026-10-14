@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Bump `a2ui_core` dependency to `^0.3.0`.
 - The Direct JSON prompt lists `description` after `type` in the
   agent-to-renderer and `common_types` schemas it embeds, following the
   reordered specification files.
