@@ -60,6 +60,19 @@ public final class SurfaceViewModel: ObservableObject {
   /// on the Main Thread.
   @Published public private(set) var rootNode: Node?
 
+  /// Whether a data change re-resolves the whole tree and republishes ``rootNode``.
+  ///
+  /// Defaults to `true`. A renderer that keeps its nodes up to date by resolving again only the
+  /// nodes whose ``Node/dependencies`` changed, with ``NodeResolver/resolveNode(_:)``, can turn
+  /// it off. ``rootNode`` then still updates when components change, but not when only data does.
+  public var resolvesTreeOnDataChange = true {
+    didSet {
+      if resolvesTreeOnDataChange && !oldValue {
+        rebuildTree()
+      }
+    }
+  }
+
   // MARK: - Initialization
 
   public init(
@@ -162,9 +175,16 @@ public final class SurfaceViewModel: ObservableObject {
   }
 
   private func setUpSubscriptions() {
-    Publishers.CombineLatest(componentsModel.componentsPublisher, dataModel.dataPublisher)
-      .sink { [weak self] _, _ in
+    componentsModel.componentsPublisher
+      .sink { [weak self] _ in
         self?.rebuildTree()
+      }
+      .store(in: &cancellables)
+    dataModel.dataPublisher
+      .dropFirst()
+      .sink { [weak self] _ in
+        guard let self, self.resolvesTreeOnDataChange else { return }
+        self.rebuildTree()
       }
       .store(in: &cancellables)
   }

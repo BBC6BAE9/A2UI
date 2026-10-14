@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import A2UICore
-import Combine
 import SwiftUI
 
 /// The root SwiftUI view for a single A2UI surface.
@@ -103,43 +102,17 @@ extension Surface {
 
 /// Renders the root view model of a surface.
 private struct SurfaceContent: View {
-  @StateObject private var root: SurfaceRoot
+  @StateObject private var tree: ComponentNodeTree
 
   init(viewModel: SurfaceViewModel) {
-    _root = StateObject(wrappedValue: SurfaceRoot(viewModel: viewModel))
+    _tree = StateObject(wrappedValue: ComponentNodeTree(surface: viewModel))
   }
 
   var body: some View {
-    if let componentNode = root.componentNode {
-      ComponentNodeView(componentNode: componentNode)
+    if let root = tree.root {
+      ComponentNodeView(componentNode: root)
     } else {
       ProgressView()
-    }
-  }
-}
-
-/// Holds the root view model of a surface and passes it every root node the surface publishes.
-@MainActor
-private final class SurfaceRoot: ObservableObject {
-  @Published private(set) var componentNode: ComponentNode?
-
-  private var cancellable: AnyCancellable?
-
-  init(viewModel: SurfaceViewModel) {
-    cancellable = viewModel.$rootNode.sink { [weak self] rootNode in
-      self?.update(rootNode)
-    }
-  }
-
-  private func update(_ rootNode: Node?) {
-    guard let rootNode else {
-      componentNode = nil
-      return
-    }
-    if let componentNode, componentNode.id == rootNode.id {
-      componentNode.update(rootNode)
-    } else {
-      componentNode = ComponentNode(node: rootNode)
     }
   }
 }

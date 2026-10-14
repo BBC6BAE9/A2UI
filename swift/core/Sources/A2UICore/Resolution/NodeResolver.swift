@@ -38,6 +38,8 @@ public final class NodeResolver: Sendable {
   private var isResolvingTree = false
   private var currentComponentID: String?
   private var currentPropertyPath: String?
+  private var currentPassInstances: Set<String> = []
+  private var dependencyStack: [NodeDependencies] = []
 
   public var isV10: Bool {
     if let protocolVersion {
@@ -142,26 +144,97 @@ public final class NodeResolver: Sendable {
   /// Resolves the component tree starting from the root component ("root")
   /// using the stored component and data models.
   public func resolveTree() -> Node? {
-    let wasResolvingTree = isResolvingTree
-    if !wasResolvingTree {
-      isResolvingTree = true
-      currentPassExpressionErrors.removeAll()
+    resolvePass(partial: false) {
+      resolveNode(
+        definitionID: "root",
+        instanceID: "root",
+        basePath: nil,
+        visited: [],
+        components: componentsModel.components,
+        data: dataModel.data
+      )
+    }
+  }
+
+  /// Resolves the node at `context` again, with its descendants, using the stored component and
+  /// data models.
+  ///
+  /// Use it to update one node when the data in its ``Node/dependencies`` changes, instead of
+  /// resolving the whole tree.
+  ///
+  /// - Returns: The resolved node, or `nil` if its component no longer exists or now forms a cycle.
+  public func resolveNode(_ context: NodeContext) -> Node? {
+    resolvePass(partial: true) {
+      resolveNode(
+        definitionID: context.componentID,
+        instanceID: context.instanceID,
+        basePath: context.dataPath,
+        index: context.index,
+        instanceSuffix: context.instanceSuffix,
+        visited: context.ancestors,
+        components: componentsModel.components,
+        data: dataModel.data
+      )
+    }
+  }
+
+  /// Runs one resolution pass, recording the data each node reads and reporting each expression
+  /// error once until it stops occurring.
+  ///
+  /// A partial pass only resolves part of the tree, so it keeps the errors reported for the nodes
+  /// it didn't resolve.
+  private func resolvePass(partial: Bool, _ resolve: () -> Node?) -> Node? {
+    guard !isResolvingTree else {
+      return resolve()
+    }
+    isResolvingTree = true
+    currentPassExpressionErrors.removeAll()
+    currentPassInstances.removeAll()
+    let previousReadObserver = dataModel.readObserver
+    dataModel.readObserver = { [weak self] path in
+      self?.recordRead(path)
     }
     defer {
-      if !wasResolvingTree {
+      dataModel.readObserver = previousReadObserver
+      if partial {
+        let resolvedInstances = currentPassInstances
+        reportedExpressionErrors =
+          reportedExpressionErrors.filter { key in
+            let instanceID = key.split(separator: ":", maxSplits: 1).first.map(String.init)
+            return !resolvedInstances.contains(instanceID ?? "")
+          }
+          .union(currentPassExpressionErrors)
+      } else {
         reportedExpressionErrors = currentPassExpressionErrors
-        currentPassExpressionErrors.removeAll()
-        isResolvingTree = false
       }
+      currentPassExpressionErrors.removeAll()
+      isResolvingTree = false
     }
-    return resolveNode(
-      definitionID: "root",
-      instanceID: "root",
-      basePath: nil,
-      visited: [],
-      components: componentsModel.components,
-      data: dataModel.data
-    )
+    return resolve()
+  }
+
+  // MARK: - Dependency Recording
+
+  /// Records a data read as a dependency of the node being resolved.
+  private func recordRead(_ path: String) {
+    guard !dependencyStack.isEmpty else { return }
+    dependencyStack[dependencyStack.count - 1].values.insert(path)
+  }
+
+  /// Reads a value from the data snapshot, recording it as a dependency of the node being
+  /// resolved.
+  private func read(_ absPath: String, in data: JSONValue) -> JSONValue? {
+    if let path = DataModel.normalizedPath(absPath) {
+      recordRead(path)
+    }
+    return data[absPath]
+  }
+
+  /// Records an array expanded into template children as a dependency of the node being
+  /// resolved.
+  private func recordListRead(_ absPath: String) {
+    guard !dependencyStack.isEmpty, let path = DataModel.normalizedPath(absPath) else { return }
+    dependencyStack[dependencyStack.count - 1].lists.insert(path)
   }
 
   /// Resolves a component definition into a concrete ``Node``.
@@ -204,8 +277,11 @@ public final class NodeResolver: Sendable {
     let effectiveCatalogID = component.catalogID ?? defaultCatalogID
     let targetCatalog = getCatalog(id: effectiveCatalogID)
 
+    let ancestors = visited
     var visited = visited
     visited.insert(instanceID)
+    currentPassInstances.insert(instanceID)
+    dependencyStack.append(NodeDependencies())
 
     let schemaJSON = targetCatalog?.components[type]?.schema.jsonValue ?? .object([:])
     let propertiesSchema = extractPropertiesSchema(from: schemaJSON)
@@ -254,7 +330,16 @@ public final class NodeResolver: Sendable {
       id: instanceID,
       type: type,
       catalogID: effectiveCatalogID,
-      properties: resolvedProperties
+      properties: resolvedProperties,
+      context: NodeContext(
+        componentID: definitionID,
+        instanceID: instanceID,
+        dataPath: basePath,
+        index: index,
+        instanceSuffix: instanceSuffix,
+        ancestors: ancestors
+      ),
+      dependencies: dependencyStack.removeLast()
     )
   }
 
@@ -588,7 +673,7 @@ public final class NodeResolver: Sendable {
       let pathStr = dict[bindingKey]?.stringValue
     {
       let absPath = JSONValue.absolutePath(for: pathStr, in: basePath)
-      let resolvedValue = data[absPath]?.boolValue
+      let resolvedValue = read(absPath, in: data)?.boolValue
       return DataBinding<Bool>(
         identity: .path(absPath),
         value: resolvedValue,
@@ -616,7 +701,7 @@ public final class NodeResolver: Sendable {
       let pathStr = dict[bindingKey]?.stringValue
     {
       let absPath = JSONValue.absolutePath(for: pathStr, in: basePath)
-      let resolvedValue = coerceToString(data[absPath])
+      let resolvedValue = coerceToString(read(absPath, in: data))
       return DataBinding<String>(
         identity: .path(absPath),
         value: resolvedValue,
@@ -645,7 +730,7 @@ public final class NodeResolver: Sendable {
       let pathStr = dict[bindingKey]?.stringValue
     {
       let absPath = JSONValue.absolutePath(for: pathStr, in: basePath)
-      let resolvedValue = data[absPath]?.doubleValue
+      let resolvedValue = read(absPath, in: data)?.doubleValue
       return DataBinding<Double>(
         identity: .path(absPath),
         value: resolvedValue,
@@ -673,7 +758,7 @@ public final class NodeResolver: Sendable {
       let pathStr = dict[bindingKey]?.stringValue
     {
       let absPath = JSONValue.absolutePath(for: pathStr, in: basePath)
-      let resolvedValue = data[absPath]
+      let resolvedValue = read(absPath, in: data)
       return DataBinding<JSONValue>(
         identity: .path(absPath),
         value: resolvedValue,
@@ -701,7 +786,9 @@ public final class NodeResolver: Sendable {
       let pathStr = dict[bindingKey]?.stringValue
     {
       let absPath = JSONValue.absolutePath(for: pathStr, in: basePath)
-      let resolvedValue = data[absPath]?.arrayValue?.compactMap { self.coerceToString($0) }
+      let resolvedValue = read(absPath, in: data)?.arrayValue?.compactMap {
+        self.coerceToString($0)
+      }
       return DataBinding<[String]>(
         identity: .path(absPath),
         value: resolvedValue,
@@ -738,7 +825,7 @@ public final class NodeResolver: Sendable {
       let bindingKey = self.isV10 ? "@path" : "path"
       if let dict = conditionJSON.dictionaryValue, let pathStr = dict[bindingKey]?.stringValue {
         let absPath = JSONValue.absolutePath(for: pathStr, in: basePath)
-        let rawVal = data[absPath]
+        let rawVal = read(absPath, in: data)
         if let rawDict = rawVal?.objectValue, let valid = rawDict["valid"]?.boolValue {
           let code = rawDict["code"]?.stringValue
           let msg = rawDict["message"]?.stringValue ?? fallbackMessage
@@ -997,6 +1084,7 @@ public final class NodeResolver: Sendable {
 
       let absPath = JSONValue.absolutePath(for: pathStr, in: basePath)
 
+      recordListRead(absPath)
       guard let dataListVal = data[absPath],
         let dataItems = dataListVal.arrayValue
       else {
