@@ -27,11 +27,12 @@ import referencing.exceptions
 
 from ..catalog import system_functions_for
 from ..catalog.catalog import CatalogApi
-from ..common.semver import is_at_least_version
+from ..common.semver import is_at_least_version, to_protocol_version
 from ..common.uax31 import is_valid_uax31_identifier
 from ..exceptions import A2uiCatalogError, A2uiErrorDetail, A2uiValidationError
 from ..processing.format_pydantic_error import format_validation_error
 from ..schema import ProtocolVersion
+from ..schema.common_types_schema import get_common_types_catalog_defs
 from .schema_validator import SchemaValidator
 
 
@@ -283,7 +284,39 @@ class PayloadValidator:
         base_schema = (
             getattr(target_cat, "validation_schema", {}) or {} if target_cat else {}
         )
-        defs = base_schema.get("$defs", {}) if isinstance(base_schema, dict) else {}
+        defs = (
+            dict(base_schema.get("$defs", {})) if isinstance(base_schema, dict) else {}
+        )
+        raw_ver = getattr(target_cat, "protocol_version", None) if target_cat else None
+        if raw_ver:
+            p_ver = to_protocol_version(raw_ver)
+            if p_ver is ProtocolVersion.V0_8:
+                p_ver = ProtocolVersion.V0_9
+            flat_common_defs = get_common_types_catalog_defs(p_ver)
+            for mixin_name in ("ComponentCommon", "Checkable"):
+                if mixin_name not in defs and mixin_name in flat_common_defs:
+                    defs[mixin_name] = flat_common_defs[mixin_name]
+        cat_id = getattr(target_cat, "catalog_id", None)
+        if "anyFunction" in defs and isinstance(cat_id, str) and cat_id:
+            any_fn = defs["anyFunction"]
+            declared = (
+                list(any_fn["oneOf"])
+                if isinstance(any_fn, dict) and isinstance(any_fn.get("oneOf"), list)
+                else []
+            )
+            defs["anyFunction"] = {
+                "oneOf": [
+                    *declared,
+                    {
+                        "type": "object",
+                        "properties": {
+                            "catalogId": {"not": {"const": cat_id}},
+                            "args": {"type": "object"},
+                        },
+                        "required": ["catalogId"],
+                    },
+                ]
+            }
         full_schema = {
             "$schema": JSON_SCHEMA_DRAFT_2020_12,
             "$defs": {**defs, **comp_schema.get("$defs", {})},
