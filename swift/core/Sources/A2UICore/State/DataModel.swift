@@ -179,6 +179,9 @@ public final class DataModel: ObservableObject {
 
   /// Returns the watched paths a change at `components` affects: the changed path, its
   /// ancestors, and the paths below it.
+  ///
+  /// Ancestors come first, so listeners on a path hear about a change before the listeners below
+  /// it.
   private func watchedPaths(affectedByChangeAt components: [String]) -> [String] {
     var paths = watchedPathsByAncestor[Self.buildPointer(components)] ?? []
     for length in 0...components.count {
@@ -187,7 +190,7 @@ public final class DataModel: ObservableObject {
         paths.insert(path)
       }
     }
-    return Array(paths)
+    return paths.sorted { $0.count < $1.count }
   }
 
   /// The pointers of the paths above `components`, from the root down.

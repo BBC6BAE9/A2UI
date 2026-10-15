@@ -17,9 +17,9 @@ import Combine
 
 /// The view model tree of one surface.
 ///
-/// Holds the surface's root ``ComponentNode``. When components change, the surface resolves the
-/// whole tree and this passes it down from the root. When only data changes, each view model
-/// resolves its own node again if it read that data, so the surface doesn't resolve the tree.
+/// Holds the surface's root ``ComponentNode``. Each view model resolves only its own node and keeps
+/// it up to date as the data and component definitions it uses change, so the surface no longer
+/// resolves the whole tree.
 @MainActor
 public final class ComponentNodeTree: ObservableObject {
 
@@ -31,25 +31,26 @@ public final class ComponentNodeTree: ObservableObject {
 
   /// Creates the view model tree of a surface.
   ///
-  /// Turns off ``SurfaceViewModel/resolvesTreeOnDataChange``, so the surface's
-  /// ``SurfaceViewModel/rootNode`` no longer updates when only data changes.
+  /// Turns off ``SurfaceViewModel/resolvesTree``, so the surface's ``SurfaceViewModel/rootNode``
+  /// no longer updates.
   public init(surface: SurfaceViewModel) {
     self.surface = surface
-    surface.resolvesTreeOnDataChange = false
-    cancellable = surface.$rootNode.sink { [weak self] rootNode in
-      self?.update(rootNode)
+    surface.resolvesTree = false
+    cancellable = surface.componentsModel.watch(NodeContext.root.componentID) { [weak self] _ in
+      self?.updateRoot()
     }
+    updateRoot()
   }
 
-  private func update(_ rootNode: Node?) {
-    guard let rootNode else {
-      root = nil
-      return
-    }
-    if let root, root.id == rootNode.id, root.node.type == rootNode.type {
-      root.update(rootNode)
-    } else {
-      root = ComponentNode(node: rootNode, surface: surface)
+  /// Replaces the root view model when the root component appears, disappears, or changes type.
+  ///
+  /// Other changes are handled by the root view model itself.
+  private func updateRoot() {
+    let type = surface.componentsModel.get(NodeContext.root.componentID)?.type
+    guard root?.node.type != type else { return }
+    root?.detach()
+    root = surface.nodeResolver.resolveNode(.root, resolvingChildren: false).map {
+      ComponentNode(node: $0, surface: surface)
     }
   }
 }

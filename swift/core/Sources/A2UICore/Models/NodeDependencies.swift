@@ -24,6 +24,10 @@ public struct NodeDependencies: Sendable, Equatable {
   /// affects the node; each item's contents are read by the item's own node.
   public internal(set) var lists: Set<String> = []
 
+  /// The IDs of the component definitions the node looked up for its children, including ones
+  /// that don't exist.
+  public internal(set) var components: Set<String> = []
+
   /// Creates an empty set of dependencies.
   public init() {}
 }

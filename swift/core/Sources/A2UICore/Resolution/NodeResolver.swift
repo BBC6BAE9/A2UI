@@ -40,6 +40,7 @@ public final class NodeResolver: Sendable {
   private var currentPropertyPath: String?
   private var currentPassInstances: Set<String> = []
   private var dependencyStack: [NodeDependencies] = []
+  private var childPlaceholderDepth: Int?
 
   public var isV10: Bool {
     if let protocolVersion {
@@ -156,15 +157,22 @@ public final class NodeResolver: Sendable {
     }
   }
 
-  /// Resolves the node at `context` again, with its descendants, using the stored component and
-  /// data models.
+  /// Resolves the node at `context` again using the stored component and data models.
   ///
-  /// Use it to update one node when the data in its ``Node/dependencies`` changes, instead of
-  /// resolving the whole tree.
+  /// Use it to update one node when the data or component definitions in its
+  /// ``Node/dependencies`` change, instead of resolving the whole tree.
   ///
+  /// - Parameters:
+  ///   - context: Where the node sits in the tree.
+  ///   - resolvingChildren: Whether to resolve the node's descendants too. When `false`, each
+  ///     child node is a placeholder that only carries its ID, type, catalog ID, and context, to
+  ///     be resolved on its own with this method.
   /// - Returns: The resolved node, or `nil` if its component no longer exists or now forms a cycle.
-  public func resolveNode(_ context: NodeContext) -> Node? {
-    resolvePass(partial: true) {
+  public func resolveNode(_ context: NodeContext, resolvingChildren: Bool = true) -> Node? {
+    let previousPlaceholderDepth = childPlaceholderDepth
+    childPlaceholderDepth = resolvingChildren ? nil : dependencyStack.count + 1
+    defer { childPlaceholderDepth = previousPlaceholderDepth }
+    return resolvePass(partial: true) {
       resolveNode(
         definitionID: context.componentID,
         instanceID: context.instanceID,
@@ -237,6 +245,12 @@ public final class NodeResolver: Sendable {
     dependencyStack[dependencyStack.count - 1].lists.insert(path)
   }
 
+  /// Records a child's component definition as a dependency of the node being resolved.
+  private func recordComponentRead(_ componentID: String) {
+    guard !dependencyStack.isEmpty else { return }
+    dependencyStack[dependencyStack.count - 1].components.insert(componentID)
+  }
+
   /// Resolves a component definition into a concrete ``Node``.
   ///
   /// - Parameters:
@@ -257,12 +271,29 @@ public final class NodeResolver: Sendable {
     components: [String: ComponentModel],
     data: JSONValue
   ) -> Node? {
+    recordComponentRead(definitionID)
     if visited.contains(instanceID) {
       return nil
     }
 
     guard let component = components[definitionID] else {
       return nil
+    }
+
+    let type = component.type
+    let effectiveCatalogID = component.catalogID ?? defaultCatalogID
+    let context = NodeContext(
+      componentID: definitionID,
+      instanceID: instanceID,
+      dataPath: basePath,
+      index: index,
+      instanceSuffix: instanceSuffix,
+      ancestors: visited
+    )
+    if let childPlaceholderDepth, dependencyStack.count >= childPlaceholderDepth {
+      return Node(
+        id: instanceID, type: type, catalogID: effectiveCatalogID, properties: [:],
+        context: context)
     }
 
     let previousComponentID = currentComponentID
@@ -273,11 +304,8 @@ public final class NodeResolver: Sendable {
       currentPropertyPath = previousPropertyPath
     }
 
-    let type = component.type
-    let effectiveCatalogID = component.catalogID ?? defaultCatalogID
     let targetCatalog = getCatalog(id: effectiveCatalogID)
 
-    let ancestors = visited
     var visited = visited
     visited.insert(instanceID)
     currentPassInstances.insert(instanceID)
@@ -331,14 +359,7 @@ public final class NodeResolver: Sendable {
       type: type,
       catalogID: effectiveCatalogID,
       properties: resolvedProperties,
-      context: NodeContext(
-        componentID: definitionID,
-        instanceID: instanceID,
-        dataPath: basePath,
-        index: index,
-        instanceSuffix: instanceSuffix,
-        ancestors: ancestors
-      ),
+      context: context,
       dependencies: dependencyStack.removeLast()
     )
   }

@@ -29,4 +29,9 @@ public struct NodeContext: Sendable, Equatable {
   let index: Int?
   let instanceSuffix: String?
   let ancestors: Set<String>
+
+  /// The context of a surface's root node.
+  public static let root = NodeContext(
+    componentID: "root", instanceID: "root", dataPath: nil, index: nil, instanceSuffix: nil,
+    ancestors: [])
 }

@@ -60,14 +60,15 @@ public final class SurfaceViewModel: ObservableObject {
   /// on the Main Thread.
   @Published public private(set) var rootNode: Node?
 
-  /// Whether a data change re-resolves the whole tree and republishes ``rootNode``.
+  /// Whether a change to the components or data re-resolves the whole tree and republishes
+  /// ``rootNode``.
   ///
-  /// Defaults to `true`. A renderer that keeps its nodes up to date by resolving again only the
-  /// nodes whose ``Node/dependencies`` changed, with ``NodeResolver/resolveNode(_:)``, can turn
-  /// it off. ``rootNode`` then still updates when components change, but not when only data does.
-  public var resolvesTreeOnDataChange = true {
+  /// Defaults to `true`. A renderer that keeps each node up to date on its own, resolving it with
+  /// ``NodeResolver/resolveNode(_:resolvingChildren:)`` when the data or component definitions in
+  /// its ``Node/dependencies`` change, can turn it off. ``rootNode`` then no longer updates.
+  public var resolvesTree = true {
     didSet {
-      if resolvesTreeOnDataChange && !oldValue {
+      if resolvesTree && !oldValue {
         rebuildTree()
       }
     }
@@ -175,15 +176,9 @@ public final class SurfaceViewModel: ObservableObject {
   }
 
   private func setUpSubscriptions() {
-    componentsModel.componentsPublisher
-      .sink { [weak self] _ in
-        self?.rebuildTree()
-      }
-      .store(in: &cancellables)
-    dataModel.dataPublisher
-      .dropFirst()
-      .sink { [weak self] _ in
-        guard let self, self.resolvesTreeOnDataChange else { return }
+    Publishers.CombineLatest(componentsModel.componentsPublisher, dataModel.dataPublisher)
+      .sink { [weak self] _, _ in
+        guard let self, self.resolvesTree else { return }
         self.rebuildTree()
       }
       .store(in: &cancellables)
