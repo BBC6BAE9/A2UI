@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Support cross-catalog `$ref` references across peer catalogs in
+  `resolveCatalogs`, `validatePayloads`, `DirectJsonPromptGenerator` (preserving
+  unbundled external `$ref`s in `Catalog.toJson()` while retaining transitive
+  `common_types.json` definitions), and the Express format (`ExpressPromptGenerator`,
+  `ExpressCompiler`, and `ExpressDecompiler`). Each links copies of the
+  catalogs with `linkCatalogs` and never changes the catalogs it is given:
+  `resolveCatalogs` returns linked copies, linked with every registered
+  catalog as declared and as transformed, and `ExpressCompiler.catalogs` and
+  `ExpressDecompiler.catalogs` hold linked copies. An inline catalog the agent
+  does not accept is linked with nothing.
+- `CatalogConfig.transformedCatalog` is computed on first access and then
+  reused, so every request sees the same transformed catalog.
 - Declared the API for protocol v1.0. The SDK reads and writes the protocol
   version that the active catalogs target, rather than always v0.9:
   - `FileSystemCatalogProvider` and `InMemoryCatalogProvider` load documents
