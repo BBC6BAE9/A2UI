@@ -62,41 +62,15 @@ public struct A2UIColumn: View {
   }
 
   @ViewBuilder private var content: some View {
-    VStack(alignment: horizontalAlignment, spacing: spacing) {
-      if justify == "end" || justify == "center" || justify == "spaceAround"
-        || justify == "spaceEvenly"
-      {
-        Spacer(minLength: 0)
-      }
-
-      ForEach(Array(children.enumerated()), id: \.element.id) { index, childNode in
+    A2UIFlexLayout(axis: .vertical, justify: justify, align: align, spacing: spacing) {
+      ForEach(children, id: \.id) { childNode in
         ComponentNode.child(for: childNode, in: componentNode).makeView()
           .frame(maxWidth: align == "stretch" ? .infinity : nil, alignment: childAlignment)
-
-        if justify == "spaceBetween" && index < children.count - 1 {
-          Spacer(minLength: 0)
-        } else if (justify == "spaceAround" || justify == "spaceEvenly")
-          && index < children.count - 1
-        {
-          Spacer(minLength: 0)
-        }
-      }
-
-      if justify == "center" || justify == "spaceAround" || justify == "spaceEvenly" {
-        Spacer(minLength: 0)
+          .frame(maxHeight: justify == "stretch" ? .infinity : nil)
       }
     }
     .environment(\.a2uiLayoutAxis, .vertical)
     .frame(maxWidth: align == "stretch" ? .infinity : nil, alignment: frameAlignment)
-  }
-
-  private var horizontalAlignment: HorizontalAlignment {
-    switch align {
-    case "start", "stretch": return .leading
-    case "end": return .trailing
-    case "center": return .center
-    default: return .leading
-    }
   }
 
   private var frameAlignment: Alignment {
@@ -117,10 +91,7 @@ public struct A2UIColumn: View {
     }
   }
 
-  private var spacing: CGFloat? {
-    if isDistributed {
-      return 0
-    }
-    return 8
+  private var spacing: CGFloat {
+    isDistributed ? 0 : 8
   }
 }

@@ -15,12 +15,12 @@
 import A2UICore
 import SwiftUI
 
-/// Stretches a direct child of a row or column along the container's main axis when it has a
-/// weight, like CSS `flex-grow`.
+/// Applies the weight of a direct child of a row or column, like CSS `flex-grow`.
 ///
-/// The component applies its own weight, so its container doesn't read its properties. The
-/// modifier clears the axis for the component's own content, so only direct children of a row or
-/// column use it.
+/// The component declares its own weight, so its container doesn't read its properties:
+/// ``A2UIFlexLayout`` reads it as a layout value and gives the component a share of the free
+/// space, which the component fills along the container's main axis. The modifier clears the axis
+/// for the component's own content, so only direct children of a row or column use it.
 struct WeightModifier: ViewModifier {
   let weight: Double?
 
@@ -31,9 +31,11 @@ struct WeightModifier: ViewModifier {
     if let weight, weight > 0, let layoutAxis {
       switch layoutAxis {
       case .horizontal:
-        content.frame(maxWidth: .infinity).layoutPriority(weight)
+        content.frame(maxWidth: .infinity, alignment: .leading)
+          .layoutValue(key: A2UIWeightKey.self, value: weight)
       case .vertical:
-        content.frame(maxHeight: .infinity).layoutPriority(weight)
+        content.frame(maxHeight: .infinity, alignment: .top)
+          .layoutValue(key: A2UIWeightKey.self, value: weight)
       }
     } else {
       content
