@@ -73,9 +73,6 @@ export class DirectJsonFormatFactory implements InferenceFormatFactory {
   ) {}
 
   createFormat(catalogs: CatalogApi[], examples?: DirectJsonExamples): InferenceFormat {
-    if (catalogs.length === 0) {
-      throw new Error('At least one catalog must be provided to create a DirectJsonFormat.');
-    }
     return new DirectJsonFormat(
       catalogs,
       examples,

@@ -34,6 +34,7 @@ import {
   pruneCommonTypesSchema,
   pruneMessagesSchema,
 } from '../../utils/message-schemas.js';
+import {checkParserCatalogs} from '../../utils/validation.js';
 import {DirectJsonDecompiler} from './decompiler.js';
 
 export type DirectJsonExamples =
@@ -62,12 +63,7 @@ export class DirectJsonPromptGenerator extends PromptGenerator {
     private readonly allowedMessages?: readonly string[],
   ) {
     super(linkCatalogs(catalogs));
-    const versions = new Set(catalogs.map(c => normalizeVersionString(c.protocolVersion ?? '0.9')));
-    if (versions.size > 1) {
-      throw new A2uiCatalogError(
-        `The schema prompt's catalogs target different protocol versions: ${[...versions].sort().join(', ')}.`,
-      );
-    }
+    checkParserCatalogs(catalogs);
   }
 
   generateBaseRules(): string {

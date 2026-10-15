@@ -15,16 +15,16 @@
  */
 
 import {
+  A2uiCatalogError,
+  A2uiError,
+  A2uiValidationError,
   CatalogApi,
   linkCatalogs,
   MessageProcessor,
   STRICT_VALIDATION,
-  A2uiValidationError,
-  A2uiCatalogError,
-  A2uiError,
 } from '../internal/web-core.js';
-import {toWireProtocolVersion} from './protocol-version.js';
 import {validateEnvelope} from './envelope-validation.js';
+import {toWireProtocolVersion} from './protocol-version.js';
 
 /**
  * Checks that catalogs target the same release line and returns it.
