@@ -46,9 +46,13 @@ public struct A2UICard: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     VStack(alignment: .leading, spacing: 0) {
       if let childNode {
-        ComponentNodeView(componentNode: .child(for: childNode, in: componentNode))
+        ComponentNode.child(for: childNode, in: componentNode).makeView()
       }
     }
     .padding(16)

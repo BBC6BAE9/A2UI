@@ -56,10 +56,14 @@ public struct A2UIButton: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     Button(action: { action?() }) {
       Group {
         if let childNode {
-          ComponentNodeView(componentNode: .child(for: childNode, in: componentNode))
+          ComponentNode.child(for: childNode, in: componentNode).makeView()
         }
       }
       .padding(.horizontal, variant == "borderless" ? 0 : 16)

@@ -50,6 +50,10 @@ public struct A2UIText: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     textForVariant(textContent, variant: variant)
       .accessibilityIdentifier("A2UIText_\(node.id)")
       .accessibilityLabel(accessibilityLabel.isEmpty ? textContent : accessibilityLabel)

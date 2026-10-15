@@ -27,14 +27,27 @@ public final class ComponentNodeTree: ObservableObject {
   @Published public private(set) var root: ComponentNode?
 
   private let surface: SurfaceViewModel
+  private let catalogs: [String: Catalog<ComponentImplementation>]
+  private let defaultCatalogID: String?
   private var cancellable: AnyCancellable?
 
   /// Creates the view model tree of a surface.
   ///
   /// Turns off ``SurfaceViewModel/resolvesTree``, so the surface's ``SurfaceViewModel/rootNode``
   /// no longer updates.
-  public init(surface: SurfaceViewModel) {
+  ///
+  /// - Parameters:
+  ///   - surface: The surface to build the tree of.
+  ///   - catalogs: The catalogs to look up the implementations that render the view models in.
+  ///   - defaultCatalogID: The catalog to look in first for a node without a catalog ID.
+  public init(
+    surface: SurfaceViewModel,
+    catalogs: [String: Catalog<ComponentImplementation>] = [:],
+    defaultCatalogID: String? = nil
+  ) {
     self.surface = surface
+    self.catalogs = catalogs
+    self.defaultCatalogID = defaultCatalogID
     surface.resolvesTree = false
     cancellable = surface.componentsModel.watch(NodeContext.root.componentID) { [weak self] _ in
       self?.updateRoot()
@@ -42,15 +55,20 @@ public final class ComponentNodeTree: ObservableObject {
     updateRoot()
   }
 
-  /// Replaces the root view model when the root component appears, disappears, or changes type.
+  /// Replaces the root view model when the root component appears or disappears, or its type or
+  /// catalog changes.
   ///
   /// Other changes are handled by the root view model itself.
   private func updateRoot() {
-    let type = surface.componentsModel.get(NodeContext.root.componentID)?.type
-    guard root?.node.type != type else { return }
+    let definition = surface.componentsModel.get(NodeContext.root.componentID)
+    let catalogID = definition?.catalogID ?? surface.nodeResolver.defaultCatalogID
+    if root?.type == definition?.type && (definition == nil || root?.catalogID == catalogID) {
+      return
+    }
     root?.detach()
     root = surface.nodeResolver.resolveNode(.root, resolvingChildren: false).map {
-      ComponentNode(node: $0, surface: surface)
+      ComponentNode(
+        node: $0, surface: surface, catalogs: catalogs, defaultCatalogID: defaultCatalogID)
     }
   }
 }

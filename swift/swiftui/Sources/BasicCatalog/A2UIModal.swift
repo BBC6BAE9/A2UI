@@ -52,9 +52,13 @@ public struct A2UIModal: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     Group {
       if let triggerNode {
-        ComponentNodeView(componentNode: .child(for: triggerNode, in: componentNode))
+        ComponentNode.child(for: triggerNode, in: componentNode).makeView()
           .simultaneousGesture(
             TapGesture().onEnded {
               isPresented = true
@@ -66,7 +70,7 @@ public struct A2UIModal: View {
       NavigationStack {
         ScrollView {
           if let contentNode {
-            ComponentNodeView(componentNode: .child(for: contentNode, in: componentNode))
+            ComponentNode.child(for: contentNode, in: componentNode).makeView()
               .padding()
           }
         }

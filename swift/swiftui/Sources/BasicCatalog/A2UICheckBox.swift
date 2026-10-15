@@ -52,6 +52,10 @@ public struct A2UICheckBox: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     VStack(alignment: .leading, spacing: 4) {
       Button(action: {
         boolBinding.wrappedValue.toggle()

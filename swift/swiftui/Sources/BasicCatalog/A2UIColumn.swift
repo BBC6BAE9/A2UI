@@ -58,6 +58,10 @@ public struct A2UIColumn: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     VStack(alignment: horizontalAlignment, spacing: spacing) {
       if justify == "end" || justify == "center" || justify == "spaceAround"
         || justify == "spaceEvenly"
@@ -66,7 +70,7 @@ public struct A2UIColumn: View {
       }
 
       ForEach(Array(children.enumerated()), id: \.element.id) { index, childNode in
-        ComponentNodeView(componentNode: .child(for: childNode, in: componentNode))
+        ComponentNode.child(for: childNode, in: componentNode).makeView()
           .frame(maxWidth: align == "stretch" ? .infinity : nil, alignment: childAlignment)
 
         if justify == "spaceBetween" && index < children.count - 1 {
@@ -82,6 +86,7 @@ public struct A2UIColumn: View {
         Spacer(minLength: 0)
       }
     }
+    .environment(\.a2uiLayoutAxis, .vertical)
     .frame(maxWidth: align == "stretch" ? .infinity : nil, alignment: frameAlignment)
   }
 

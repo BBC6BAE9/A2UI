@@ -221,6 +221,10 @@ public struct A2UIChoicePicker: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     VStack(alignment: .leading, spacing: 10) {
       if !labelText.isEmpty {
         Text(labelText)

@@ -58,6 +58,10 @@ public struct A2UIRow: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     HStack(alignment: verticalAlignment, spacing: spacing) {
       if justify == "end" || justify == "center" || justify == "spaceAround"
         || justify == "spaceEvenly"
@@ -66,9 +70,8 @@ public struct A2UIRow: View {
       }
 
       ForEach(Array(children.enumerated()), id: \.element.id) { index, childNode in
-        RowChild(
-          componentNode: .child(for: childNode, in: componentNode),
-          stretches: justify == "stretch")
+        ComponentNode.child(for: childNode, in: componentNode).makeView()
+          .frame(maxWidth: justify == "stretch" ? .infinity : nil)
 
         if justify == "spaceBetween" && index < children.count - 1 {
           Spacer(minLength: 0)
@@ -83,6 +86,7 @@ public struct A2UIRow: View {
         Spacer(minLength: 0)
       }
     }
+    .environment(\.a2uiLayoutAxis, .horizontal)
     .frame(maxWidth: (isDistributed || justify == "stretch") ? .infinity : nil)
   }
 
@@ -100,20 +104,5 @@ public struct A2UIRow: View {
       return 0
     }
     return 8
-  }
-}
-
-/// Renders a child of a row, stretching it when it stretches or has a weight.
-///
-/// Observes the child's view model, since the weight is one of the child's own properties.
-private struct RowChild: View {
-  @ObservedObject var componentNode: ComponentNode
-  let stretches: Bool
-
-  var body: some View {
-    let node = componentNode.node
-    let isWeighted = node.double(for: "weight") != nil || node.int(for: "weight") != nil
-    ComponentNodeView(componentNode: componentNode)
-      .frame(maxWidth: (isWeighted || stretches) ? .infinity : nil)
   }
 }

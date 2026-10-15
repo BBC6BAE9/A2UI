@@ -58,6 +58,10 @@ public struct A2UIImage: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     if let url = URL(string: urlString), !urlString.isEmpty {
       AsyncImage(url: url) { phase in
         switch phase {

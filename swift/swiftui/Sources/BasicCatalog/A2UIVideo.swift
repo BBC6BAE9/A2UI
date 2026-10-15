@@ -54,6 +54,10 @@ public struct A2UIVideo: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     Group {
       if let player {
         ZStack {

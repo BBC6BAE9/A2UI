@@ -172,6 +172,10 @@ public struct A2UIAudioPlayer: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     VStack(alignment: .leading, spacing: 8) {
       if !descriptionText.isEmpty {
         Text(descriptionText)

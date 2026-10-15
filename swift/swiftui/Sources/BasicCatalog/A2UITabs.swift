@@ -74,6 +74,10 @@ public struct A2UITabs: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     VStack(alignment: .leading, spacing: 12) {
       // Tab Bar Headers
       ScrollView(.horizontal, showsIndicators: false) {
@@ -105,7 +109,7 @@ public struct A2UITabs: View {
 
       // Selected Tab Content
       if selectedIndex < tabs.count, let childNode = tabs[selectedIndex].childNode {
-        ComponentNodeView(componentNode: .child(for: childNode, in: componentNode))
+        ComponentNode.child(for: childNode, in: componentNode).makeView()
       }
     }
   }

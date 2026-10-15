@@ -332,6 +332,10 @@ public struct A2UIIcon: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     Group {
       switch iconSource {
       case .sfSymbol(let name):

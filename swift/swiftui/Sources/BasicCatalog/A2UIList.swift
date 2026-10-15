@@ -50,11 +50,15 @@ public struct A2UIList: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     if direction == "horizontal" {
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(alignment: verticalAlignment, spacing: 12) {
           ForEach(componentNode.children) { childComponentNode in
-            ComponentNodeView(componentNode: childComponentNode)
+            childComponentNode.makeView()
               .frame(
                 maxHeight: align == "stretch" ? .infinity : nil, alignment: horizontalChildAlignment
               )
@@ -67,7 +71,7 @@ public struct A2UIList: View {
       ScrollView(.vertical, showsIndicators: true) {
         LazyVStack(alignment: horizontalAlignment, spacing: 8) {
           ForEach(componentNode.children) { childComponentNode in
-            ComponentNodeView(componentNode: childComponentNode)
+            childComponentNode.makeView()
               .frame(
                 maxWidth: align == "stretch" ? .infinity : nil, alignment: verticalChildAlignment)
           }

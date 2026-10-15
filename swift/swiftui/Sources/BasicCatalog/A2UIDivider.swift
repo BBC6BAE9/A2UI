@@ -46,6 +46,10 @@ public struct A2UIDivider: View {
   }
 
   public var body: some View {
+    content.a2uiWeight(node)
+  }
+
+  @ViewBuilder private var content: some View {
     if axis == "vertical" {
       Divider()
         .frame(width: 1)
