@@ -15,8 +15,8 @@
 import 'package:a2ui_core/a2ui_core.dart';
 
 import '../../utils/catalogs.dart';
+import 'ast.dart';
 import 'schema_helper.dart';
-import 'syntax.dart';
 
 /// The surface a block writes to when it names none with `surface(...)`.
 const String defaultSurfaceId = 'default_surface';

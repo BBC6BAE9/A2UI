@@ -236,6 +236,12 @@ root = Text($/user/name)
         },
       );
     });
+
+    test('an integer too large for an int as a double', () {
+      expect(components('root = Text("x", weight=99999999999999999999)'), [
+        {'id': 'root', 'component': 'Text', 'text': 'x', 'weight': 1e20},
+      ]);
+    });
   });
 
   group('parses a response', () {
@@ -323,6 +329,37 @@ surface("s1")
     }
   });
 
+  group('reports where a syntax error is', () {
+    final cases = <String, (String, String)>{
+      'one the parser finds': (
+        'root = Text("x")\nb = Text("y"',
+        "line 2, column 13: mismatched input '<EOF>'",
+      ),
+      'one the lexer finds': (
+        'root = @Text("x")',
+        "line 1, column 8: token recognition error at: '@'",
+      ),
+      'an argument given twice': (
+        'root = Text(text="a", text="b")',
+        "line 1, column 23: argument 'text' is given twice.",
+      ),
+    };
+    for (final MapEntry<String, (String, String)> entry in cases.entries) {
+      test(entry.key, () {
+        expect(
+          () => compile(entry.value.$1),
+          throwsA(
+            isA<A2uiParseError>().having(
+              (e) => e.message,
+              'message',
+              contains('Express syntax error at ${entry.value.$2}'),
+            ),
+          ),
+        );
+      });
+    }
+  });
+
   group('promptSnippet', () {
     test('annotates the catalog signatures', () {
       final String snippet = processor().promptSnippet;
@@ -404,6 +441,47 @@ surface("s1")
         ),
         isFalse,
       );
+    });
+
+    group('ends a block where the grammar ends strings and comments', () {
+      final cases = <String, (String, String)>{
+        'a comment, at a lone carriage return': (
+          '<a2ui>\r# note\rroot = Text("x")\r</a2ui>',
+          '# note\rroot = Text("x")',
+        ),
+        'a triple-quoted string without its closing quotes': (
+          '<a2ui>root = Text("""x")</a2ui>',
+          'root = Text("""x")',
+        ),
+        'a raw triple-quoted string without its closing quotes': (
+          '<a2ui>root = Text(r"""x")</a2ui>',
+          'root = Text(r"""x")',
+        ),
+        // `r"` followed by a line break is the name `r` and a string, which
+        // reads `\"` as an escaped quote.
+        'a raw string across a line break': (
+          '<a2ui>x = r"\n\\"</a2ui>"\n</a2ui>',
+          'x = r"\n\\"</a2ui>"',
+        ),
+        // `$r` is a path, so the string after it is not raw.
+        'a raw string prefix inside a path': (
+          '<a2ui>x = \$r"\\"</a2ui>"\n</a2ui>',
+          'x = \$r"\\"</a2ui>"',
+        ),
+      };
+      for (final MapEntry<String, (String, String)> entry in cases.entries) {
+        test(entry.key, () {
+          expect(
+            parser.hasFormatContent(entry.value.$1, complete: true),
+            isTrue,
+          );
+          expect(parser.unwrap(entry.value.$1), [
+            isA<RawA2uiPart>()
+                .having((p) => p.a2uiRaw, 'a2uiRaw', entry.value.$2)
+                .having((p) => p.isFinal, 'isFinal', isTrue),
+          ]);
+        });
+      }
     });
 
     test('reads a direct JSON block as text', () {
