@@ -49,7 +49,8 @@ public final class ComponentNodeTree: ObservableObject {
     self.catalogs = catalogs
     self.defaultCatalogID = defaultCatalogID
     surface.resolvesTree = false
-    cancellable = surface.componentsModel.watch(NodeContext.root.componentID) { [weak self] _ in
+    cancellable = surface.componentsModel.watchIdentity(NodeContext.root.componentID) {
+      [weak self] _ in
       self?.updateRoot()
     }
     updateRoot()

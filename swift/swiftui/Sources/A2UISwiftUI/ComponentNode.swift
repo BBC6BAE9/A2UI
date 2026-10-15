@@ -190,12 +190,19 @@ public final class ComponentNode: ObservableObject, Identifiable {
         self.refresh()
       }
     }
-    let componentIDs = node.dependencies.components.union(context.map { [$0.componentID] } ?? [])
-    let componentSubscriptions = componentIDs.map { componentID in
-      surface.componentsModel.watch(componentID) { [weak self] definition in
-        self?.componentChanged(componentID, to: definition)
+    let componentsModel = surface.componentsModel
+    let ownID = context?.componentID
+    let ownSubscription = ownID.map { id in
+      componentsModel.watch(id) { [weak self] definition in
+        self?.componentChanged(id, to: definition)
       }
     }
+    let childSubscriptions = node.dependencies.components.filter { $0 != ownID }.map { id in
+      componentsModel.watchIdentity(id) { [weak self] definition in
+        self?.componentChanged(id, to: definition)
+      }
+    }
+    let componentSubscriptions = [ownSubscription].compactMap { $0 } + childSubscriptions
     subscriptions = valueSubscriptions + listSubscriptions + componentSubscriptions
   }
 
@@ -207,7 +214,9 @@ public final class ComponentNode: ObservableObject, Identifiable {
   ///   of children changed.
   /// - A child's definition whose type or catalog changed: replaces that child's view models
   ///   without resolving the node again.
-  /// - Any other change to a child's definition: nothing; the child's own view model handles it.
+  ///
+  /// It only watches the identity of its children's definitions, since a child's own view model
+  /// handles any other change to them.
   private func componentChanged(_ componentID: String, to definition: ComponentModel?) {
     let definitionCatalogID = definition?.catalogID ?? surface?.nodeResolver.defaultCatalogID
     func matchesDefinition(_ viewModel: ComponentNode) -> Bool {

@@ -24,7 +24,8 @@ import OrderedJSON
 public final class SurfaceComponentsModel: ObservableObject {
 
   private let componentsSubject: CurrentValueSubject<[String: ComponentModel], Never>
-  private var listeners: [String: [(id: UUID, callback: (ComponentModel?) -> Void)]] = [:]
+  private var listeners:
+    [String: [(id: UUID, identityOnly: Bool, callback: (ComponentModel?) -> Void)]] = [:]
 
   /// The current components map.
   public var components: [String: ComponentModel] {
@@ -91,8 +92,24 @@ public final class SurfaceComponentsModel: ObservableObject {
   public func watch(_ id: String, _ listener: @escaping (ComponentModel?) -> Void)
     -> AnyCancellable
   {
+    addListener(for: id, identityOnly: false, listener)
+  }
+
+  /// Subscribes a listener to changes to the identity of the component with the given ID: its
+  /// addition and removal, and changes to its type or catalog ID.
+  ///
+  /// - Returns: An `AnyCancellable` token that unsubscribes the listener when cancelled.
+  public func watchIdentity(_ id: String, _ listener: @escaping (ComponentModel?) -> Void)
+    -> AnyCancellable
+  {
+    addListener(for: id, identityOnly: true, listener)
+  }
+
+  private func addListener(
+    for id: String, identityOnly: Bool, _ listener: @escaping (ComponentModel?) -> Void
+  ) -> AnyCancellable {
     let token = UUID()
-    listeners[id, default: []].append((id: token, callback: listener))
+    listeners[id, default: []].append((id: token, identityOnly: identityOnly, callback: listener))
     return AnyCancellable { [weak self] in
       guard let self else { return }
       self.listeners[id]?.removeAll { $0.id == token }
@@ -113,7 +130,11 @@ public final class SurfaceComponentsModel: ObservableObject {
     change(&current)
     componentsSubject.send(current)
     let notifications = Set(ids).filter { previous[$0] != current[$0] }.flatMap { id in
-      (listeners[id] ?? []).map { listener in { listener.callback(current[id]) } }
+      let identityChanged =
+        previous[id]?.type != current[id]?.type || previous[id]?.catalogID != current[id]?.catalogID
+      return (listeners[id] ?? []).filter { identityChanged || !$0.identityOnly }.map { listener in
+        { listener.callback(current[id]) }
+      }
     }
     for notify in notifications {
       notify()
