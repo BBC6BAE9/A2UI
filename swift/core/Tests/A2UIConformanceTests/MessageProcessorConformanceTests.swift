@@ -36,13 +36,29 @@ private final class ConformanceActionCaptureHandler: ActionHandling,
 /// `conformance/core/message_processor_v1_0.yaml` suites.
 @MainActor
 struct MessageProcessorConformanceTests {
-  /// Cases in `core/message_processor_v1_0.yaml` pending in Swift.
+  /// `process_messages` cases whose payload is accepted but reports an error when it renders.
   ///
-  /// `test_v10_call_to_undeclared_function_without_strict_mode_accepted` needs undeclared
-  /// functions to be accepted under default processing, which is tracked in a follow-up PR.
-  private static let pendingCases: Set<String> = [
-    "test_v10_call_to_undeclared_function_without_strict_mode_accepted"
+  /// The processor accepts these payloads by design, and the error comes from evaluating them:
+  /// - `test_v10_call_to_undeclared_function_without_strict_mode_accepted` calls `notAFunction`,
+  ///   which the surface default catalog does not declare. Default processing accepts it so a
+  ///   renderer can forward it to the agent, so local evaluation reports a missing function.
+  ///
+  /// Each successful step of these cases must report at least one error, and every error it
+  /// reports must match the expected one.
+  private static let expectedRuntimeErrors: [String: ExpectedRuntimeError] = [
+    "test_v10_call_to_undeclared_function_without_strict_mode_accepted": ExpectedRuntimeError(
+      code: "EXPRESSION_ERROR",
+      surfaceID: "s",
+      messageContains: "notAFunction"
+    )
   ]
+
+  /// A runtime error a case expects rendering to report through the action handler.
+  private struct ExpectedRuntimeError {
+    let code: String
+    let surfaceID: String
+    let messageContains: String
+  }
 
   @Test func messageProcessorV09Conformance() throws {
     try runMessageProcessorSuite(
@@ -70,9 +86,6 @@ struct MessageProcessorConformanceTests {
 
     for testCase in cases {
       let name = testCase["name"] as? String ?? "<unnamed>"
-      if Self.pendingCases.contains(name) {
-        continue
-      }
       let action = testCase["action"] as? String ?? "process_messages"
 
       switch action {
@@ -334,6 +347,7 @@ struct MessageProcessorConformanceTests {
       actionHandler: handler,
       validationConfig: strictMode ? .strict : .relaxed
     )
+    let expectedRuntimeError = Self.expectedRuntimeErrors[name]
 
     let steps: [[String: Any]]
     if let stepList = testCase["steps"] as? [[String: Any]] {
@@ -373,9 +387,37 @@ struct MessageProcessorConformanceTests {
       }
 
       let payload = ConformanceTestHelper.toJSONValue(step["messages"] ?? [:])
+      handler.capturedErrors.removeAll()
       try processor.processMessages(payload)
-      #expect(
-        handler.capturedErrors.isEmpty, "[\(name)] Unexpected errors: \(handler.capturedErrors)")
+      if let expected = expectedRuntimeError {
+        #expect(
+          !handler.capturedErrors.isEmpty,
+          "[\(name)] Expected a runtime error from rendering the accepted payload"
+        )
+        for error in handler.capturedErrors {
+          guard case .generic(let generic) = error else {
+            Issue.record("[\(name)] Expected a generic runtime error, got \(error)")
+            continue
+          }
+          #expect(
+            generic.code == expected.code,
+            "[\(name)] Expected code \(expected.code), got \(generic.code)"
+          )
+          #expect(
+            generic.surfaceID == expected.surfaceID,
+            "[\(name)] Unexpected surface in \(generic)"
+          )
+          #expect(
+            generic.message.contains(expected.messageContains),
+            "[\(name)] Unexpected message: \(generic.message)"
+          )
+        }
+      } else {
+        #expect(
+          handler.capturedErrors.isEmpty,
+          "[\(name)] Unexpected errors: \(handler.capturedErrors)"
+        )
+      }
 
       let expectedDict = (step["expect"] as? [String: Any]) ?? [:]
       let expectedSurfaces =
