@@ -53,6 +53,16 @@ public struct A2UITextField: View {
     placeholderText.map { Text($0) }
   }
 
+  /// The top inset of the first line in `TextEditor`: the backing `UITextView` insets its text by
+  /// 8 points, while the `NSTextView` on macOS has no inset.
+  private var editorTextTopInset: CGFloat {
+    #if os(macOS)
+      0
+    #else
+      8
+    #endif
+  }
+
   private var variant: String {
     node.string(for: "variant") ?? "shortText"
   }
@@ -109,12 +119,14 @@ public struct A2UITextField: View {
       TextEditor(text: valueBinding)
         .scrollContentBackground(.hidden)
         .frame(minHeight: 80)
+        // TextEditor takes no title, so name it for VoiceOver explicitly.
+        .accessibilityLabel(labelText.isEmpty ? (placeholderText ?? "") : labelText)
         .overlay(alignment: .topLeading) {
           // TextEditor has no native prompt, so draw the placeholder while it is empty.
           if let placeholderText, valueBinding.wrappedValue.isEmpty {
             Text(placeholderText)
               .foregroundStyle(Color.secondary)
-              .padding(.top, 8)
+              .padding(.top, editorTextTopInset)
               .padding(.leading, 5)
               .allowsHitTesting(false)
               .accessibilityHidden(true)
