@@ -41,6 +41,10 @@ public struct A2UIList: View {
     componentNode.node
   }
 
+  private var children: [Node] {
+    node.children(for: "children")
+  }
+
   private var direction: String {
     node.string(for: "direction") ?? "vertical"
   }
@@ -53,8 +57,8 @@ public struct A2UIList: View {
     if direction == "horizontal" {
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(alignment: verticalAlignment, spacing: 12) {
-          ForEach(componentNode.children) { childComponentNode in
-            ComponentNodeView(componentNode: childComponentNode)
+          ForEach(children) { childNode in
+            ComponentNodeView(componentNode: .child(for: childNode, in: componentNode))
               .frame(
                 maxHeight: align == "stretch" ? .infinity : nil, alignment: horizontalChildAlignment
               )
@@ -67,8 +71,8 @@ public struct A2UIList: View {
     } else {
       ScrollView(.vertical, showsIndicators: true) {
         LazyVStack(alignment: horizontalAlignment, spacing: 8) {
-          ForEach(componentNode.children) { childComponentNode in
-            ComponentNodeView(componentNode: childComponentNode)
+          ForEach(children) { childNode in
+            ComponentNodeView(componentNode: .child(for: childNode, in: componentNode))
               .frame(
                 maxWidth: align == "stretch" ? .infinity : nil, alignment: verticalChildAlignment)
           }
