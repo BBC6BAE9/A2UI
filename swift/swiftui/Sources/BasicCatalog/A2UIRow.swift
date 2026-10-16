@@ -70,6 +70,7 @@ public struct A2UIRow: View {
       }
     }
     .environment(\.a2uiLayoutAxis, .horizontal)
+    .a2uiAccessibilityElement(for: node, children: .contain)
   }
 
   private var spacing: CGFloat {

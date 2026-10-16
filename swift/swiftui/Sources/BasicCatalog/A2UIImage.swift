@@ -80,7 +80,9 @@ public struct A2UIImage: View {
           EmptyView()
         }
       }
-      .accessibilityLabel(imageDescription.isEmpty ? "Image" : imageDescription)
+      .accessibilityLabel(
+        node.explicitAccessibilityAttributes?.label
+          ?? (imageDescription.isEmpty ? "Image" : imageDescription))
     } else {
       Image(systemName: "photo")
         .font(.largeTitle)

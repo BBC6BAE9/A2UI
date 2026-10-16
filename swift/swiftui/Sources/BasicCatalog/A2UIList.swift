@@ -41,6 +41,10 @@ public struct A2UIList: View {
     componentNode.node
   }
 
+  private var children: [Node] {
+    node.children(for: "children")
+  }
+
   private var direction: String {
     node.string(for: "direction") ?? "vertical"
   }
@@ -57,8 +61,8 @@ public struct A2UIList: View {
     if direction == "horizontal" {
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(alignment: verticalAlignment, spacing: 12) {
-          ForEach(componentNode.children) { childComponentNode in
-            childComponentNode.makeView()
+          ForEach(children) { childNode in
+            ComponentNode.child(for: childNode, in: componentNode).makeView()
               .frame(
                 maxHeight: align == "stretch" ? .infinity : nil, alignment: horizontalChildAlignment
               )
@@ -66,12 +70,13 @@ public struct A2UIList: View {
         }
         .padding(.horizontal, 4)
       }
-      .accessibilityIdentifier("A2UIList_\(node.id ?? "")")
+      .accessibilityIdentifier("A2UIList_\(node.id)")
+      .a2uiAccessibilityElement(for: node, children: .contain)
     } else {
       ScrollView(.vertical, showsIndicators: true) {
         LazyVStack(alignment: horizontalAlignment, spacing: 8) {
-          ForEach(componentNode.children) { childComponentNode in
-            childComponentNode.makeView()
+          ForEach(children) { childNode in
+            ComponentNode.child(for: childNode, in: componentNode).makeView()
               .frame(
                 maxWidth: align == "stretch" ? .infinity : nil, alignment: verticalChildAlignment)
           }
@@ -79,7 +84,8 @@ public struct A2UIList: View {
         .padding(.vertical, 4)
       }
       .frame(maxWidth: align == "stretch" ? .infinity : nil)
-      .accessibilityIdentifier("A2UIList_\(node.id ?? "")")
+      .accessibilityIdentifier("A2UIList_\(node.id)")
+      .a2uiAccessibilityElement(for: node, children: .contain)
     }
   }
 

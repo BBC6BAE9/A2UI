@@ -92,13 +92,15 @@ public final class ComponentNode: ObservableObject, Identifiable {
 
   /// Makes the view of the component with the implementation its catalogs register for its type.
   ///
-  /// The view observes this view model, so it re-renders when the view model publishes.
+  /// The view observes this view model, so it re-renders when the view model publishes. It gets
+  /// the component's `accessibility` attributes applied through ``A2UIAccessibilityModifier``.
   public func makeView() -> AnyView {
     guard let implementation else {
       print("[A2UI] Component view builder not found for type: \(type)")
       return AnyView(EmptyView())
     }
-    return implementation.builder(self)
+    return AnyView(
+      implementation.builder(self).modifier(ComponentAccessibilityModifier(componentNode: self)))
   }
 
   /// Updates the component from its newly resolved node.

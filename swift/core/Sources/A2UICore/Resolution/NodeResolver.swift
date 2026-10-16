@@ -975,6 +975,7 @@ public final class NodeResolver: Sendable {
       return ResolvedAction(
         identity: unresolvedIdentity,
         sourceComponentID: componentID,
+        dataContextPath: basePath,
         trigger: { [weak self] in
           guard let self else { return }
 
@@ -1029,6 +1030,7 @@ public final class NodeResolver: Sendable {
       return ResolvedAction(
         identity: unresolvedIdentity,
         sourceComponentID: componentID,
+        dataContextPath: basePath,
         trigger: { [weak self] in
           guard let self else { return }
 
