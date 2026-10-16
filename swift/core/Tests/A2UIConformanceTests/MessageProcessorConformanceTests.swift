@@ -36,44 +36,12 @@ private final class ConformanceActionCaptureHandler: ActionHandling,
 /// `conformance/core/message_processor_v1_0.yaml` suites.
 @MainActor
 struct MessageProcessorConformanceTests {
-  /// Cases in `core/message_processor_v1_0.yaml` pending v1.0 catalog resolution in Swift.
-  private static let v10CatalogResolutionPendingCases: Set<String> = [
-    "test_v10_call_in_index_args_is_checked",
-    "test_v10_call_in_index_args_on_surface_without_default_errors",
-    "test_v10_call_in_list_with_invalid_args_errors",
-    "test_v10_call_in_list_without_catalog_id_uses_surface_default",
-    "test_v10_call_naming_catalog_of_other_protocol_version_errors",
-    "test_v10_call_naming_unknown_catalog_errors_without_strict_mode",
-    "test_v10_call_to_undeclared_function_without_strict_mode_accepted",
-    "test_v10_call_with_non_string_catalog_id_errors",
-    "test_v10_call_without_catalog_id_on_surface_without_default_errors_without_strict_mode",
-    "test_v10_calls_in_lists_naming_their_catalog",
-    "test_v10_component_from_named_catalog_with_closed_schema_accepted",
-    "test_v10_component_naming_catalog_is_checked_against_that_catalog",
-    "test_v10_component_update_without_catalog_id_on_surface_without_default_errors",
-    "test_v10_component_update_without_catalog_id_uses_surface_default",
-    "test_v10_component_with_non_string_catalog_id_errors",
-    "test_v10_component_without_catalog_id_errors_with_a_single_catalog",
-    "test_v10_component_without_catalog_id_on_surface_without_default_errors",
-    "test_v10_components_naming_catalogs_on_surface_without_default",
-    "test_v10_function_call_naming_catalog_with_invalid_args_errors",
-    "test_v10_function_call_naming_catalog_with_valid_args",
-    "test_v10_function_call_naming_catalog_without_that_function_errors",
-    "test_v10_function_call_naming_unknown_catalog_errors",
-    "test_v10_function_call_with_empty_catalog_id_errors",
-    "test_v10_function_call_with_empty_name_errors",
-    "test_v10_function_call_without_catalog_id_on_surface_without_default_errors",
-    "test_v10_function_call_without_catalog_id_to_unknown_function_errors",
-    "test_v10_function_call_without_catalog_id_uses_surface_default",
-    "test_v10_get_renderer_data_model_excludes_surface_without_default_from_v09",
-    "test_v10_get_renderer_data_model_filters_by_surface_protocol_version",
-    "test_v10_get_renderer_data_model_includes_surface_without_default",
-    "test_v10_index_function_on_surface_with_default",
-    "test_v10_index_function_on_surface_without_default",
-    "test_v10_nested_call_in_args_naming_its_catalog",
-    "test_v10_nested_call_in_args_on_surface_without_default_errors",
-    "test_v10_nested_call_in_args_resolves_its_own_catalog",
-    "test_v10_undefined_system_function_errors",
+  /// Cases in `core/message_processor_v1_0.yaml` pending in Swift.
+  ///
+  /// `test_v10_call_to_undeclared_function_without_strict_mode_accepted` needs undeclared
+  /// functions to be accepted under default processing, which is tracked in a follow-up PR.
+  private static let pendingCases: Set<String> = [
+    "test_v10_call_to_undeclared_function_without_strict_mode_accepted"
   ]
 
   @Test func messageProcessorV09Conformance() throws {
@@ -102,7 +70,7 @@ struct MessageProcessorConformanceTests {
 
     for testCase in cases {
       let name = testCase["name"] as? String ?? "<unnamed>"
-      if Self.v10CatalogResolutionPendingCases.contains(name) {
+      if Self.pendingCases.contains(name) {
         continue
       }
       let action = testCase["action"] as? String ?? "process_messages"
@@ -148,6 +116,38 @@ struct MessageProcessorConformanceTests {
 
     var catalogs: [AnyCatalog] = []
 
+    var catalogPaths = testCase["catalogPaths"] as? [String] ?? []
+    if let catalogPath = testCase["catalogPath"] as? String {
+      catalogPaths.append(catalogPath)
+    }
+    if !catalogPaths.isEmpty {
+      catalogs = try catalogPaths.map { path in
+        let catalogSchema = try ConformanceTestHelper.loadRepositoryJSON(path: path)
+        // A published catalog states its protocol version; fall back to the path for any
+        // catalog that does not.
+        let pathVersion: String?
+        if let declaredVersion = catalogSchema["protocolVersion"]?.stringValue {
+          pathVersion =
+            A2UIProtocolVersion(lenientRawValue: declaredVersion)?.rawValue ?? declaredVersion
+        } else if path.contains("v0_9_1") {
+          pathVersion = "v0.9.1"
+        } else if path.contains("v0_9") {
+          pathVersion = "v0.9"
+        } else {
+          pathVersion = explicitVer
+        }
+        let pathCommonTypes =
+          (try? ConformanceTestHelper.commonTypesSchema(
+            forProtocolVersion: pathVersion ?? pVer
+          )) ?? commonTypes
+        return ConformanceTestHelper.buildCatalog(
+          catalogSchema: catalogSchema,
+          commonTypes: pathCommonTypes,
+          protocolVersion: pathVersion
+        )
+      }
+    }
+
     if let catalogList = testCase["catalogs"] as? [[String: Any]] {
       let openSchema = try Schema(instance: "{\"type\": \"object\"}")
       let containerSchema = try Schema(
@@ -164,7 +164,7 @@ struct MessageProcessorConformanceTests {
           }
           """
       )
-      catalogs = catalogList.map { dict in
+      let inlineCatalogs: [AnyCatalog] = catalogList.map { dict in
         let built = ConformanceTestHelper.buildCatalog(
           catalogSchema: ConformanceTestHelper.toJSONValue(dict),
           commonTypes: commonTypes
@@ -191,20 +191,7 @@ struct MessageProcessorConformanceTests {
         }
         return built
       }
-    } else {
-      var catalogPaths = testCase["catalogPaths"] as? [String] ?? []
-      if let catalogPath = testCase["catalogPath"] as? String {
-        catalogPaths.append(catalogPath)
-      }
-      if !catalogPaths.isEmpty {
-        catalogs = try catalogPaths.map { path in
-          ConformanceTestHelper.buildCatalog(
-            catalogSchema: try ConformanceTestHelper.loadRepositoryJSON(path: path),
-            commonTypes: commonTypes,
-            protocolVersion: explicitVer
-          )
-        }
-      }
+      catalogs.append(contentsOf: inlineCatalogs)
     }
 
     if catalogs.isEmpty {
@@ -332,16 +319,6 @@ struct MessageProcessorConformanceTests {
       return [msgDict]
     }
     return []
-  }
-
-  private func decodeMessages(from rawMessages: [[String: Any]]) throws -> [AgentToRendererMessage]
-  {
-    let parser = MessageParser()
-    return try rawMessages.map { dict in
-      let jsonVal = ConformanceTestHelper.toJSONValue(dict)
-      let data = try JSONEncoder().encode(jsonVal)
-      return try parser.decode(jsonData: data)
-    }
   }
 
   private func runProcessMessagesCase(
@@ -485,18 +462,32 @@ struct MessageProcessorConformanceTests {
   ) throws {
     let catalogs = try buildProcessorCatalogs(from: testCase, defaultVersion: defaultVersion)
     let processor = MessageProcessor(catalogs: catalogs)
-    let rawMessages = extractRawMessages(from: testCase)
-    let messages = try decodeMessages(from: rawMessages)
-    processor.process(messages: messages)
 
-    let actual = try processor.getRendererDataModel()
+    let steps: [[String: Any]]
+    if let stepList = testCase["steps"] as? [[String: Any]] {
+      steps = stepList
+    } else {
+      steps = [testCase]
+    }
+    for step in steps {
+      let payload = ConformanceTestHelper.toJSONValue(step["messages"] ?? [:])
+      try processor.processMessages(payload)
+    }
+
+    let args = testCase["args"] as? [String: Any] ?? [:]
+    let versionStr = args["version"] as? String
+    let protocolVersion = versionStr.flatMap { A2UIProtocolVersion(lenientRawValue: $0) }
+    let actual = try processor.getRendererDataModel(version: protocolVersion)
     let expectedDict =
       (testCase["expect"] as? [String: Any])
       ?? (testCase["expectedDataModel"] as? [String: Any])
     if let expectedSurfaces = expectedDict?["surfaces"] {
       #expect(
         actual?["surfaces"] == ConformanceTestHelper.toJSONValue(expectedSurfaces),
-        "[\(name)] Expected renderer data model \(expectedSurfaces), got \(String(describing: actual))"
+        """
+        [\(name)] Expected renderer data model \(expectedSurfaces), \
+        got \(String(describing: actual))
+        """
       )
     } else {
       #expect(
