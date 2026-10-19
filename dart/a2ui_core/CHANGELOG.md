@@ -1,5 +1,14 @@
 # [a2ui_core](https://pub.dev/packages/a2ui_core) Changelog
 
+## Unreleased
+
+- Exported `checkPathsAndRecursion`, the check of data-model paths and
+  nesting depth that `MessageProcessor` runs on each message under a
+  validation config. Its new `grownFrom` argument takes an earlier form of
+  the message that passed the check, and a list or map the two hold at the
+  same place is not checked again, so a message that grows as it streams is
+  checked for what it gained.
+
 ## 0.3.0
 
 - `Catalog.commonTypesSchema` and the bundled `common_types` schemas list
