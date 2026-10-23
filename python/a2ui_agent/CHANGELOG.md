@@ -21,6 +21,22 @@
 - **BREAKING**: `A2uiGenerator` and `A2uiRequestProcessor` now default to
   `ExpressFormatFactory` (`ExpressFormat`) instead of `DirectJsonFormatFactory`
   (`DirectJsonFormat`).
+- Add `RendererState` to `a2ui.utils`, the agent's mirror of the surfaces a
+  renderer holds (#3268). It wraps a `MessageProcessor` and checks each
+  outbound message against the state applied before it: `apply` and nested
+  `transaction` blocks roll back through an undo log on failure, and
+  `check_topology` checks the trees of the touched surfaces. It needs
+  `SurfaceComponentsModel.insert_component` from the next `a2ui-core`
+  release, so that release must also raise the `a2ui-core` floor in
+  `pyproject.toml` to its version.
+- `validate_payload` runs the payload through a short-lived `RendererState`
+  instead of building a new `MessageProcessor` for each surface and
+  candidate catalog. Its results are unchanged, except that a v0.8 update
+  that follows a `deleteSurface` of its surface is now buffered, as a v0.8
+  renderer does, instead of rejected. A payload may now be any iterable of
+  messages, such as a generator.
+- The `a2ui.utils.validation` module is removed. `validate_payload` moved to
+  `a2ui.utils.renderer_state` and is still exported from `a2ui.utils`.
 - Express variable and check identifiers now follow Unicode UAX 31 in the
   grammar and decompiler ([#3390](https://github.com/a2ui-project/a2ui/issues/3390)).
   From protocol v1.0 onward, `ExpressDecompiler` rejects component IDs that are
