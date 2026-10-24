@@ -15,15 +15,23 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import {describe, expect, test} from 'vitest';
 
-import {CatalogConfig, DirectJsonFormat, ExpressFormat, SkillGenerator} from '../../src/index.js';
+import {
+  CatalogConfig,
+  DirectJsonFormat,
+  ExpressFormat,
+  Skill,
+  SkillGenerator,
+  SkillSet,
+} from '../../src/index.js';
 import {CatalogApi} from '../../src/internal/web-core.js';
 import {loadBasicCatalog, REPO_ROOT} from '../helpers/basic-catalogs.js';
 import {classify, KNOWN_FAILURES, loadCases, LoadedCase} from './loader.js';
-import {conformancePath} from './suite-helpers.js';
+import {conformancePath, errorClassFor} from './suite-helpers.js';
 
 const basicCatalogV10 = loadBasicCatalog('v1.0');
 
@@ -89,6 +97,51 @@ function runSkillSetCase(testCase: LoadedCase, {generator}: SkillCaseContext): v
   }
 }
 
+interface LiteralSkill {
+  name: string;
+  description: string;
+  content: string;
+  filename?: string;
+}
+
+/**
+ * Runs an `export_to_directory` case. It needs no inference format, so it is dispatched
+ * before `buildSkillContext`, as the Python runner does.
+ */
+function runExportToDirectoryCase(testCase: LoadedCase): void {
+  const args = (testCase.args as Record<string, unknown>) || {};
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a2ui-skill-export-'));
+  try {
+    for (const rel of (args.pre_existing_files as string[] | undefined) ?? []) {
+      const abs = path.join(tempDir, rel);
+      fs.mkdirSync(path.dirname(abs), {recursive: true});
+      fs.writeFileSync(abs, 'pre-existing', 'utf-8');
+    }
+
+    const run = () => {
+      const skillSet = new SkillSet();
+      for (const s of (args.skills as LiteralSkill[] | undefined) ?? []) {
+        skillSet.add(new Skill(s));
+      }
+      skillSet.exportToDirectory(tempDir);
+    };
+    if (testCase.expect_error) {
+      expect(run).toThrow(errorClassFor(testCase));
+    } else {
+      run();
+    }
+
+    for (const rel of (testCase.expected_files as string[] | undefined) ?? []) {
+      expect(fs.existsSync(path.join(tempDir, rel)), `expected ${rel} to exist`).toBe(true);
+    }
+    for (const rel of (testCase.expected_absent_files as string[] | undefined) ?? []) {
+      expect(fs.existsSync(path.join(tempDir, rel)), `expected ${rel} to be removed`).toBe(false);
+    }
+  } finally {
+    fs.rmSync(tempDir, {recursive: true, force: true});
+  }
+}
+
 const SKILL_ACTION_HANDLERS: Record<
   string,
   (testCase: LoadedCase, ctx: SkillCaseContext) => void | Promise<void>
@@ -106,6 +159,10 @@ describe('Conformance: skill.yaml', () => {
     const testName = `${action} · ${name}`;
 
     const testFn = async () => {
+      if (action === 'export_to_directory') {
+        runExportToDirectoryCase(testCase);
+        return;
+      }
       const handler = Object.hasOwn(SKILL_ACTION_HANDLERS, action)
         ? SKILL_ACTION_HANDLERS[action]
         : undefined;
